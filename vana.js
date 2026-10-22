@@ -398,6 +398,66 @@
     return out.sort((a, b) => b.share - a.share || b.counts[0] - a.counts[0]);
   }
 
+  // ---- Fishing ----
+  // LandSandBoat's fishing applies the same timing to every fish (fishingutils.cpp). Its fish table
+  // also lists hour, moon and month patterns for each fish, but the server never loads them.
+  // The moon index it uses comes from its own GetMoonPhase, whose ranges differ a little from the moon
+  // names elsewhere; percents that fall in a gap count as New Moon, and of the percents the moon
+  // reaches, only 43% waning does.
+  function fishingMoon(percent, direction) {
+    const waxing = direction === 'waxing', waning = direction === 'waning';
+    if (percent <= 5 || (percent <= 10 && waning)) return 0;
+    if (percent >= 7 && percent <= 38 && waxing) return 1;
+    if (percent >= 40 && percent <= 55 && waxing) return 2;
+    if (percent >= 57 && percent <= 88 && waxing) return 3;
+    if (percent >= 95 || (percent >= 90 && waxing)) return 4;
+    if (percent >= 62 && percent <= 93 && waning) return 5;
+    if (percent >= 45 && percent <= 60 && waning) return 6;
+    if (percent >= 12 && percent < 43 && waning) return 7;
+    return 0;
+  }
+  // What the moon adds to the weight of hooking a fish rather than an item, a monster or nothing, by
+  // that index: floor(25 * MOONPATTERN_4) outdoors and floor(15 * MOONPATTERN_4) in cities.
+  const FISH_MOON = [0, 4, 15, 23, 23, 15, 4, 0], FISH_MOON_CITY = [0, 2, 9, 14, 14, 9, 2, 0];
+  const FISH_MOON_BEST = 23;
+  // Rain multiplies the fish weight by 1.1 and a squall by 1.2; nothing else about weather counts.
+  const FISH_WEATHER = { 6: 1.1, 7: 1.2 };
+  // The wait for a bite: 13, less 4 at New or Full Moon and less 1 at 05:00 or 17:00 (GetHookTime).
+  const BITE_WAIT = 13, BITE_HOURS = [5, 17];
+  const fishingMoonOfDay = (dayNumber) => { const m = moonOfDay(dayNumber); return fishingMoon(m.percent, m.direction); };
+
+  // Stretches of whole days from t on when the moon gives fish its best weight (Waxing Gibbous and Full
+  // Moon by the index above). A stretch already under way keeps its real start.
+  function bestFishingMoons(t, count = 4) {
+    const best = (n) => FISH_MOON[fishingMoonOfDay(n)] === FISH_MOON_BEST, today = clock(t).dayNumber, out = [];
+    let n = today;
+    if (best(today)) while (n > today - 84 && best(n - 1)) n--;
+    for (let cur = null; out.length < count && n < today + 84 * (count + 1); n++) {
+      if (best(n)) { if (cur) cur.end = dayStartOf(n + 1); else cur = { start: dayStartOf(n), end: dayStartOf(n + 1) }; }
+      else if (cur) { out.push(cur); cur = null; }
+    }
+    return out;
+  }
+
+  // Fish, baits and fishing spots from fishing-data.js, which the page loads and the tests pass in.
+  let fishingData = null, fishById = null;
+  function useFishingData(data) {
+    fishingData = data;
+    const baits = new Map(data.baits.map(([id, name, type]) => [id, { id, name, type }]));
+    fishById = new Map(data.fish.map(([id, name, skill, size, rarity, legendary, keyItem, bites]) => [id, {
+      id, name, skill, large: size === 1, rarity, legendary: !!legendary, keyItem,
+      baits: bites.map(([b, power]) => ({ ...baits.get(b), power })),
+    }]));
+  }
+  const loadFishing = () => { if (!fishById && root.VanaFishingData) useFishingData(root.VanaFishingData); return !!fishById; };
+  const fishList = () => (loadFishing() ? [...fishById.values()] : []);
+  const fishOf = (id) => (loadFishing() && fishById.get(id)) || null;
+  // Where a fish can bite: each fishing area whose catch list has it.
+  function fishSpots(id) {
+    if (!loadFishing()) return [];
+    return fishingData.spots.filter((s) => s[4].includes(id)).map(([zoneId, zone, area, difficulty]) => ({ zoneId, zone, area, difficulty }));
+  }
+
   // ---- Calendars and the planner ----
   function nextDays(t, count, weekday = null) {
     const out = [];
@@ -494,6 +554,8 @@
     routeStatus, nextDeparture, departureMinutes, PORTS, portsFrom, earliestTrip, findTrips, guildStatus, nextGuildOpening,
     WEATHERS, WEATHER_ELEMENT, isDoubleWeather, weatherIdsFor, useWeatherData, weatherOf, weatherZones,
     FOG, FOG_FROM, FOG_TO, isCity, hasMorningFog, weatherGroups, weatherTier, findWeather, weatherOdds,
+    fishingMoon, fishingMoonOfDay, FISH_MOON, FISH_MOON_CITY, FISH_MOON_BEST, FISH_WEATHER, BITE_WAIT, BITE_HOURS,
+    bestFishingMoons, useFishingData, fishList, fishOf, fishSpots,
     nextDays, hourSegments, findWindows, icsCalendar,
   };
   if (typeof module === 'object' && module.exports) module.exports = Vana;

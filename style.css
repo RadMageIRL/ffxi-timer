@@ -353,6 +353,15 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-
 .grid.trips td { vertical-align: top; line-height: 1.55; }
 .grid.trips .route-name .sub { margin: 1px 0; }
 
+/* ---- Fishing ---- */
+.fish-info { margin: 10px 0 8px; font-size: 13px; line-height: 1.7; }
+.fish-baits { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.bait { border: 1px solid var(--border); border-radius: 99px; padding: 1px 9px; font-size: 12px; }
+.bait.p3 { border-color: color-mix(in srgb, var(--ok) 60%, var(--border)); }
+.bait.p2 { border-color: color-mix(in srgb, var(--gold) 50%, var(--border)); }
+.bait .sub { color: var(--muted); font-size: 11px; }
+.fish-now { margin: 6px 0 4px; }
+
 /* ---- Vana theme extras ---- */
 [data-theme="vana"] body {
   background:

@@ -2,6 +2,19 @@
 
 Every version of ffxi-timer and what changed in it, newest first. Dates are the day I released each one.
 
+## v0.6 (2026-10-22)
+
+Added
+- A Fishing panel for the 100 fish a LandSandBoat server lets you hook. Picking a fish shows its skill level, size, rarity and any key item it needs, and the baits and lures that hook it, strongest first.
+- Every spot where that fish bites, soonest first, with the next time the best fishing moon (Waxing Gibbous and Full Moon) comes together with rain or a squall in that zone. Where it never rains, the row shows the best moon alone. Zones that are cities, or that LandSandBoat makes harder, say so.
+- The fishing moon now, when the best moon next starts, and the next 05:00 or 17:00.
+- **Plan** on each spot, which opens that search in the planner, where it can have an alarm.
+- **Copy link** for a fish.
+- `tools/build-fishing.mjs`, which builds `fishing-data.js` from LandSandBoat's fishing tables.
+
+Changed
+- The zone name code moved from `tools/build-weather.mjs` to `tools/zone-names.mjs`, which both build tools use. `weather-data.js` comes out the same.
+
 ## v0.5 (2026-10-22)
 
 Added

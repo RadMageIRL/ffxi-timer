@@ -449,6 +449,67 @@ test('morning fog is in every zone outside the cities except those fixed on an e
   assert.deepEqual([V.WEATHERS[V.FOG], V.FOG_FROM, V.FOG_TO], ['Fog', 2, 7]);
 });
 
+// ---- Fishing ----
+V.useFishingData(createRequire(import.meta.url)('../fishing-data.js'));
+const fishNamed = (name) => V.fishList().find((f) => f.name === name);
+test("the fishing moon index follows LandSandBoat's GetMoonPhase ranges", () => {
+  assert.deepEqual([[0, 'peak'], [5, 'waxing'], [10, 'waning'], [7, 'waxing'], [38, 'waxing'], [40, 'waxing'], [55, 'waxing'], [57, 'waxing'],
+    [88, 'waxing'], [90, 'waxing'], [100, 'peak'], [95, 'waning'], [93, 'waning'], [62, 'waning'], [60, 'waning'], [45, 'waning'], [42, 'waning'], [12, 'waning']]
+    .map(([p, d]) => V.fishingMoon(p, d)), [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 7]);
+});
+test('43% waning falls in a gap of those ranges and counts as New Moon, the only gap the moon reaches', () => {
+  assert.equal(V.fishingMoon(43, 'waning'), 0);
+  const gaps = [];
+  for (let d = 0; d < 84; d++) {
+    const m = moonAfter(d), i = V.fishingMoon(m.percent, m.direction);
+    if (i === 0 && m.phase !== V.NEW) gaps.push(`${m.percent}% ${m.direction}`);
+  }
+  assert.deepEqual(gaps, ['43% waning']);
+});
+test('the best fishing moon days are exactly the Waxing Gibbous and Full Moon days, so the planner can search them', () => {
+  for (let d = 0; d < 84; d++) {
+    const m = moonAfter(d);
+    assert.equal(V.FISH_MOON[V.fishingMoonOfDay(anchorDay + d)] === V.FISH_MOON_BEST, m.phase === 3 || m.phase === V.FULL, `cycle day ${d}`);
+  }
+});
+test("the moon weights are LandSandBoat's floor(25 or 15 * MOONPATTERN_4)", () => {
+  const pattern = (x) => Math.min(1, Math.max(0, 0.5 * Math.cos(0.9 * x + 3.14) + 0.5));
+  assert.deepEqual(V.FISH_MOON, [0, 1, 2, 3, 4, 5, 6, 7].map((x) => Math.floor(25 * pattern(x))));
+  assert.deepEqual(V.FISH_MOON_CITY, [0, 1, 2, 3, 4, 5, 6, 7].map((x) => Math.floor(15 * pattern(x))));
+  assert.deepEqual(V.FISH_WEATHER, { 6: 1.1, 7: 1.2 });
+  assert.deepEqual([V.WEATHERS[6], V.WEATHERS[7]], ['Rain', 'Squall']);
+});
+test('the best fishing moons from the full moon peak run from 90% waxing to 95% waning, then Waxing Gibbous next cycle', () => {
+  const [now, next] = V.bestFishingMoons(V.dayStartOf(anchorDay) + 5 * V.HOUR, 2);
+  // Waxing Gibbous starts at 57% (cycle day 66 from the new moon side), Full Moon ends after 95% waning.
+  assert.deepEqual([V.moon(now.start).percent, V.moon(now.start).direction, V.moon(now.end - 1).percent, V.moon(now.end - 1).direction], [57, 'waxing', 95, 'waning']);
+  assert.equal(next.start - now.start, 84 * V.DAY);
+  const after = V.bestFishingMoons(V.dayStartOf(anchorDay + 3), 1)[0];
+  assert.equal(after.start, next.start, 'the day after a stretch ends, the next one is reported, not the old one');
+});
+// Reference values read from LandSandBoat's fishing SQL with grep, apart from the build tool.
+test('Moat Carp bites in 44 fishing spots, best on Ball of Insect Paste', () => {
+  const carp = fishNamed('Moat Carp');
+  assert.deepEqual([carp.skill, carp.large, carp.rarity, carp.legendary, carp.keyItem], [11, false, 1000, false, '']);
+  assert.deepEqual(carp.baits.map((b) => [b.name, b.power, b.type]), [['Ball of Insect Paste', 3, 0], ['Little Worm', 2, 0], ['Robber Rig', 1, 1]]);
+  assert.equal(V.fishSpots(carp.id).length, 44);
+});
+test('Gugrusaurus is a skill 140 legendary that needs the Serpent Rumors key item', () => {
+  const g = fishNamed('Gugrusaurus');
+  assert.deepEqual([g.id, g.skill, g.large, g.rarity, g.legendary, g.keyItem], [5127, 140, true, 350, true, 'Serpent Rumors']);
+});
+test('the fish list has only catchable fish: no debris, nothing disabled, nothing without a bait', () => {
+  const fish = V.fishList();
+  assert.equal(fish.length, 100);
+  assert.ok(!fish.some((f) => ['Rusty Bucket', 'Abaia', 'Bibiki Urchin'].includes(f.name)));
+  assert.ok(fish.every((f) => f.baits.length && V.fishSpots(f.id).length));
+});
+test('the nine harder fishing zones carry their difficulty', () => {
+  const zones = new Map(V.fishList().flatMap((f) => V.fishSpots(f.id)).filter((s) => s.difficulty).map((s) => [s.zone, s.difficulty]));
+  assert.deepEqual(Object.fromEntries([...zones].sort()), { 'Cape Teriggan': 5, Davoi: 2, "Dragon's Aery": 2, 'Kuftal Tunnel': 5, 'Oldton Movalpolos': 2,
+    'Quicksand Caves': 2, 'Talacca Cove': 3, 'The Boyahda Tree': 5, 'Zeruhn Mines': 3 });
+});
+
 // ---- Converter ----
 test('fromVana is the inverse of clock', () => {
   assert.equal(V.fromVana(886, 1, 1), V.EPOCH);
@@ -485,6 +546,7 @@ test('the About dialog counts match the route and guild data', () => {
   assert.match(html, new RegExp(`the ${count('ferry')} Selbina, Mhaura, Whitegate and Nashmau boats`));
   assert.match(html, new RegExp(`${V.GUILDS.length} guild shops and ${V.SHOPS.length - V.GUILDS.length} other shops`));
   assert.match(html, new RegExp(`weather forecast for ${V.weatherZones().length} zones`));
+  assert.match(html, new RegExp(`Fishing for ${V.fishList().length} fish`));
 });
 test('the About dialog example departure is what the data gives', () => {
   const [first] = V.departureMinutes(ROUTE['jeuno-sandoria']);

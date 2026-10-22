@@ -23,7 +23,7 @@
     hour12: null, sound: true, starred: [], routeTab: 'airship', guildCraft: 'all', guildOpenOnly: false,
     calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
     wxZone: 103, wxCount: 16, discord: '', wxFind: [], wxFindDays: 16, starredZones: [], savedPlans: [],
-    view: 'full', tripFrom: 'Port Bastok', tripTo: 'Kazham', tripTransfer: 1,
+    view: 'full', tripFrom: 'Port Bastok', tripTo: 'Kazham', tripTransfer: 1, fishId: 4401, // Moat Carp
   };
   const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
   settings.planner = { ...EMPTY_QUERY, ...settings.planner };
@@ -464,20 +464,21 @@
       title: `${key ? `${V.ELEMENTS[key]} weather${double ? ', double' : ''}. ` : ''}Find where and when ${V.WEATHERS[id]} is likely`,
     }, V.WEATHERS[id]);
   }
-  // A zone box takes any spelling of a zone's name; an unknown name is flagged and leaves the setting alone.
-  // The browser only suggests zones that match what is in the box, so focusing it empties the box (the
-  // zone stays visible as the placeholder) to show the whole list; leaving without typing puts it back.
-  function wireZoneInput(input, get, set, allowEmpty) {
-    const placeholder = input.placeholder, restore = () => { input.value = ZONE_NAME.get(get()) || ''; };
+  // A zone or fish box takes any spelling of a name; an unknown name is flagged and leaves the setting
+  // alone. The browser only suggests names that match what is in the box, so focusing it empties the box
+  // (the name stays visible as the placeholder) to show the whole list; leaving without typing puts it back.
+  const wireZoneInput = (input, get, set, allowEmpty) => wirePickInput(input, ZONE_NAME, ZONE_ID, get, set, allowEmpty);
+  function wirePickInput(input, NAME, ID, get, set, allowEmpty) {
+    const placeholder = input.placeholder, restore = () => { input.value = NAME.get(get()) || ''; };
     let typed = false;
     restore();
-    input.addEventListener('focus', () => { typed = false; input.placeholder = ZONE_NAME.get(get()) || placeholder; input.value = ''; });
+    input.addEventListener('focus', () => { typed = false; input.placeholder = NAME.get(get()) || placeholder; input.value = ''; });
     input.addEventListener('input', () => { typed = true; });
     input.addEventListener('blur', () => { input.placeholder = placeholder; if (!typed && !input.value) restore(); });
     input.addEventListener('change', () => {
       if (!typed && !input.value) return; // emptied by focusing, not by the user
-      const text = input.value.trim(), id = ZONE_ID.get(text.toLowerCase());
-      if (id != null) { input.value = ZONE_NAME.get(id); input.classList.remove('invalid'); set(id); persist(); }
+      const text = input.value.trim(), id = ID.get(text.toLowerCase());
+      if (id != null) { input.value = NAME.get(id); input.classList.remove('invalid'); set(id); persist(); }
       else if (!text && allowEmpty) { input.classList.remove('invalid'); set(null); persist(); }
       else input.classList.add('invalid');
     });
@@ -838,6 +839,11 @@
       persist();
       return 'finder-panel';
     }
+    if (p.has('fish') && FISH_NAME.has(Number(p.get('f')))) {
+      settings.fishId = Number(p.get('f'));
+      persist();
+      return 'fishing-panel';
+    }
     if (p.has('weather') && ZONE_NAME.has(Number(p.get('zone')))) {
       settings.wxZone = Number(p.get('zone'));
       persist();
@@ -952,6 +958,82 @@
       const wins = V.findWindows(now, q, 8);
       return { rows: wins.length ? wins.map((w) => plannerRow(w, now, q)) : [emptyRow(5, 'These conditions never line up.')], expires: wins.length ? wins[0].end : Infinity };
     });
+  }
+
+  // ---- Fishing ----
+  // A fish's spots, sorted by when the best fishing moon next comes with rain or a squall there. The
+  // best moon days are the Waxing Gibbous and Full Moon days (a test checks it), so each spot's search
+  // is an ordinary planner search, and Plan opens it in the planner for an alarm.
+  const FISH = V.fishList().sort((a, b) => a.name.localeCompare(b.name));
+  const FISH_NAME = new Map(FISH.map((f) => [f.id, f.name]));
+  const FISH_ID = new Map(FISH.map((f) => [f.name.toLowerCase(), f.id]));
+  const BAIT_POWER = ['', 'weak', 'good', 'strong'], BAIT_BONUS = [0, 35, 65, 80];
+  const WATER = [6, 7];
+  const BEST_MOON = { ...EMPTY_QUERY, phases: [3, V.FULL] };
+  const fishQuery = (zoneId, rain) => (rain ? { ...BEST_MOON, zone: zoneId, weatherElements: ['water'] } : { ...BEST_MOON });
+  function planFishing(zoneId, rain) {
+    settings.planner = fishQuery(zoneId, rain);
+    persist();
+    buildPlanner();
+    $('planner-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function fishInfo(f) {
+    const facts = [`skill ${f.skill}`, f.large ? 'large fish' : 'small fish'];
+    if (f.rarity < 1000) facts.push(`rare: ${f.rarity / 10}% of the usual hook chance`);
+    if (f.legendary) facts.push('legendary');
+    if (f.keyItem) facts.push(`needs the ${f.keyItem} key item`);
+    return [
+      el('div', { class: 'fish-facts' }, el('strong', { text: f.name }), ` · ${facts.join(' · ')}`),
+      el('div', { class: 'fish-baits' }, el('span', { class: 'option-label', text: 'Bites on' }), ...f.baits.map((b) => {
+        const lure = b.type === 1;
+        return el('span', { class: `bait p${b.power}`, title: `Power ${b.power}: adds ${BAIT_BONUS[b.power] - (lure ? 5 : 0)} to the hook chance` },
+          `${b.name}${lure ? ' (lure)' : ''}`, el('span', { class: 'sub', text: ` ${BAIT_POWER[b.power]}` }));
+      })),
+    ];
+  }
+  // Where it never rains or squalls, or the zone has no weather data, the best moon alone still counts.
+  function fishSpotRow(s, now) {
+    const hasWeather = ZONE_NAME.has(s.zoneId);
+    let [w] = hasWeather ? V.findWindows(now, fishQuery(s.zoneId, true), 1) : [];
+    const rain = !!w;
+    if (!rain) [w] = V.findWindows(now, BEST_MOON, 1);
+    const tr = el('tr'), when = spanCell(tr, w.start, w.end), c = V.clock(w.start);
+    let detail;
+    if (rain) {
+      const wx = V.weatherOf(s.zoneId, c.dayNumber), tier = V.weatherTier(wx, WATER);
+      detail = el('span', {}, dayName(c.weekday), ` ${earthWhen(w.start, now)} `, el('span', { class: `state ${TIERS[tier].toLowerCase()}`, text: TIERS[tier] }), ' ', weatherChip([wx.normal, wx.common, wx.rare][tier]));
+    } else detail = el('span', {}, dayName(c.weekday), ` ${earthWhen(w.start, now)}`, el('div', { class: 'sub', text: hasWeather ? 'best moon only: no rain or squall here' : 'best moon only: no weather data' }));
+    const notes = [V.isCity(s.zoneId) ? 'city: the moon adds at most 14 and no monsters bite' : '', s.difficulty ? 'harder: more casts catch nothing' : ''].filter(Boolean).join('; ');
+    tr.append(
+      el('td', { class: 'wrap' }, hasWeather ? el('button', { class: 'link-btn zone-link', type: 'button', onclick: () => openForecast(s.zoneId) }, s.zone) : s.zone),
+      el('td', { class: 'wrap', text: s.area || 'whole zone' }),
+      el('td', { class: 'wrap' }, detail), when.td,
+      el('td', { class: 'hide-sm wrap sub', text: notes }),
+      el('td', {}, el('button', { class: 'button small', type: 'button', title: 'Open this search in the planner, where it can have an alarm', onclick: () => planFishing(s.zoneId, rain) }, 'Plan')));
+    return { tr, update: when.update, rain, start: w.start, end: w.end };
+  }
+  function renderFishing(now) {
+    const f = FISH.find((x) => x.id === settings.fishId) || null, info = $('fish-info');
+    if (info._fish !== f) { info._fish = f; info.replaceChildren(...(f ? fishInfo(f) : [el('p', { class: 'hint', text: 'Pick a fish.' })])); }
+    // The moon and the bite hours, live.
+    const m = V.moon(now), index = V.fishingMoon(m.percent, m.direction), [best] = V.bestFishingMoons(now, 1);
+    const weight = V.FISH_MOON[index], rating = weight === V.FISH_MOON_BEST ? 'best' : weight >= 15 ? 'good' : weight ? 'poor' : 'no help';
+    setText($('fish-moon'), `${V.MOON_PHASES[index]}, ${rating} for fishing`);
+    $('fish-moon').title = `Adds ${weight} of a possible ${V.FISH_MOON_BEST} to the chance of hooking a fish`;
+    setText($('fish-best'), !best ? '-' : now >= best.start ? `now, ends in ${countdown(best.end - now)}` : `${earthWhen(best.start, now)}, in ${countdown(best.start - now)}`);
+    const c = V.clock(now), hours = V.BITE_HOURS.flatMap((h) => [c.dayStart + h * V.HOUR, c.dayStart + V.DAY + h * V.HOUR]).filter((t) => t + V.HOUR > now).sort((a, b) => a - b);
+    setText($('fish-hour'), now >= hours[0] ? `now (${vanaHM(hours[0])}), ends in ${countdown(hours[0] + V.HOUR - now)}` : `${vanaHM(hours[0])}, in ${countdown(hours[0] - now)}`);
+    liveRows($('fish-spots'), `${settings.fishId}|${gen}`, now, () => {
+      if (!f) return { rows: [emptyRow(6, 'Pick a fish to see where and when it bites best.')] };
+      // Spots that can have rain or a squall first, each group soonest first.
+      const rows = V.fishSpots(f.id).map((s) => fishSpotRow(s, now)).sort((a, b) => b.rain - a.rain || a.start - b.start);
+      return { rows, expires: Math.min(...rows.map((r) => r.end)) };
+    });
+  }
+  function wireFishing() {
+    $('fish-list').replaceChildren(...FISH.map((f) => el('option', { value: f.name })));
+    wirePickInput($('fish-pick'), FISH_NAME, FISH_ID, () => settings.fishId, (id) => { settings.fishId = id; });
+    $('fish-share').addEventListener('click', () => copyLink(`#fish&f=${settings.fishId}`));
   }
 
   // ---- Alarm list ----
@@ -1194,6 +1276,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     wireFinder();
     wireTrips();
     wireConverter();
+    wireFishing();
     wireDiscord();
     window.addEventListener('hashchange', () => openTarget(applyHash(location.hash)));
   }
@@ -1204,6 +1287,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     buildPlanner();
     buildFinderChips();
     $('wx-zone').value = ZONE_NAME.get(settings.wxZone) || '';
+    $('fish-pick').value = FISH_NAME.get(settings.fishId) || '';
     $('wf-days').value = String(settings.wxFindDays);
     tick();
     requestAnimationFrame(() => $(id).scrollIntoView({ block: 'start' }));
@@ -1218,7 +1302,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
       if (settings.view === 'simple') renderSimple(now);
       else {
         renderRoutes(now); renderTrips(now); renderGuilds(now); renderWeather(now); renderFinder(now);
-        renderCalendar(now); renderConverter(now); renderPlanner(now); renderAlarms(now);
+        renderCalendar(now); renderConverter(now); renderPlanner(now); renderFishing(now); renderAlarms(now);
       }
     }
     if (mini) renderMini(now);
