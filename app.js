@@ -6,18 +6,23 @@
   const $ = (id) => document.getElementById(id);
   const ROUTE = Object.fromEntries(V.ROUTES.map((r) => [r.id, r]));
   const GROUP = { airship: 'Airship', ferry: 'Ferry', manaclipper: 'Manaclipper', barge: 'Barge' };
-  const guildKey = (g) => `${g.craft}|${g.place}`;
-  const GUILD = Object.fromEntries(V.GUILDS.map((g) => [guildKey(g), g]));
+  const guildKey = (g) => g.npc.split(',')[0]; // NPC names are unique, craft and place are not
+  const GUILD = Object.fromEntries(V.SHOPS.map((g) => [guildKey(g), g]));
+  const shopName = (g) => (g.kind === 'guild' ? `${g.craft} guild` : `${g.craft} shop`);
   const miniMode = document.documentElement.classList.contains('mini-mode');
 
   // ---- Storage (every access guarded: private windows and blocked storage throw) ----
   const SETTINGS_KEY = 'ffxi_timer_settings', ALARMS_KEY = 'ffxi_timer_alarms', THEME_KEY = 'ffxi_timer_theme';
   const load = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; } };
   const save = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} };
-  const EMPTY_QUERY = { weekdays: [], phases: [], from: null, to: null, minPercent: null, maxPercent: null };
+  const EMPTY_QUERY = {
+    weekdays: [], phases: [], from: null, to: null, minPercent: null, maxPercent: null,
+    zone: null, weatherElements: [], weatherDouble: false, weatherChance: 'any',
+  };
   const DEFAULTS = {
     hour12: null, sound: true, starred: [], routeTab: 'airship', guildCraft: 'all', guildOpenOnly: false,
     calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
+    wxZone: 103, wxCount: 16, discord: '',
   };
   const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
   settings.planner = { ...EMPTY_QUERY, ...settings.planner };
@@ -110,7 +115,7 @@
   }
   const SOURCES = {
     route: { valid: (r) => !!ROUTE[r], next: (r, t) => V.nextDeparture(ROUTE[r], t), label: (r) => `${GROUP[ROUTE[r].group]} ${short(ROUTE[r].from)} → ${short(ROUTE[r].to)} departs` },
-    guild: { valid: (r) => !!GUILD[r], next: (r, t) => V.nextGuildOpening(GUILD[r], t), label: (r) => `${GUILD[r].craft} guild, ${GUILD[r].place} opens` },
+    guild: { valid: (r) => !!GUILD[r], next: (r, t) => V.nextGuildOpening(GUILD[r], t), label: (r) => `${shopName(GUILD[r])} in ${GUILD[r].place} opens` },
     jp: { valid: () => true, next: (r, t) => V.nextJpMidnight(t), label: () => 'JP midnight' },
     conquest: { valid: () => true, next: (r, t) => V.nextConquestTally(t), label: () => 'Conquest tally' },
     moon: { valid: (r) => r === '0' || r === '4', next: (r, t) => phaseStart(Number(r), t), label: (r) => `${V.MOON_PHASES[r]} begins` },
@@ -148,6 +153,35 @@
   function fire(a, event, now) {
     const title = SOURCES[a.kind].label(a.ref);
     notify(title, `in ${countdown(event - now)} · ${vanaHM(event)} Vana'diel · ${earth(event, 'clock')} local`, alarmId(a));
+    // Discord gets the Earth time as a timestamp tag, which each reader sees in their own time zone.
+    postDiscord(`**${title}** in ${countdown(event - now)} (${vanaHM(event)} Vana'diel, <t:${Math.round(event / 1000)}:T>)`);
+  }
+
+  // ---- Discord ----
+  // A webhook takes a plain form post. The page cannot read Discord's reply from file:// or another
+  // origin, so the post is fire-and-forget; "Send test" is how to check the URL works.
+  const DISCORD_URL = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+\/?$/;
+  function postDiscord(text, url = settings.discord) {
+    if (!url || !DISCORD_URL.test(url)) return false;
+    const body = new FormData();
+    body.append('content', text.slice(0, 1900));
+    fetch(url, { method: 'POST', body, mode: 'no-cors' }).catch(() => {});
+    return true;
+  }
+  function wireDiscord() {
+    const input = $('discord-url'), status = $('discord-status');
+    const paint = () => setText(status, settings.discord ? 'Saved. Alarms post to Discord.' : 'Not set.');
+    input.value = settings.discord;
+    paint();
+    $('discord-save').addEventListener('click', () => {
+      const url = input.value.trim();
+      if (url && !DISCORD_URL.test(url)) { setText(status, 'That is not a Discord webhook URL.'); return; }
+      settings.discord = url; persist(); paint();
+    });
+    $('discord-test').addEventListener('click', () => {
+      const url = input.value.trim();
+      setText(status, postDiscord("**ffxi-timer test** Alarms from this page will post here.", url) ? 'Test sent. Check the channel.' : 'Enter a Discord webhook URL first.');
+    });
   }
   function notify(title, body, tag) {
     toast(title, body);
@@ -312,31 +346,34 @@
   }
 
   // ---- Guilds ----
-  const CRAFTS = [...new Set(V.GUILDS.map((g) => g.craft))];
+  const CRAFTS = [...new Set(V.SHOPS.map((g) => g.craft))];
   function guildRow(g) {
     const chip = el('span', { class: 'state' }), inText = el('span', { class: 'count' }), sub = el('div', { class: 'sub' });
     const tr = el('tr', {},
-      el('td', { text: g.craft }), el('td', { class: 'place', text: g.place }),
+      el('td', {}, g.craft, g.kind === 'guild' ? null : el('div', { class: 'sub', text: 'shop' })),
+      el('td', { class: 'hide-sm wrap npc', text: g.npc }), el('td', { class: 'place', text: g.place }),
       el('td', { class: 'hide-sm', text: `${pad(g.open)}:00-${pad(g.close)}:00` }), el('td', { class: 'hide-sm' }, dayName(g.holiday)),
       el('td', {}, chip), el('td', {}, inText, sub),
-      el('td', { class: 'c-bell' }, bell(`guild:${guildKey(g)}`, `Alarm before the ${g.craft} guild in ${g.place} opens`)));
+      el('td', { class: 'c-bell' }, bell(`guild:${guildKey(g)}`, `Alarm before the ${shopName(g)} in ${g.place} opens`)));
     return { tr, update(now) {
       const s = V.guildStatus(g, now);
       setClass(chip, `state ${s.open ? 'open' : s.holiday ? 'holiday' : 'closed'}`);
       setText(chip, s.open ? 'Open' : s.holiday ? 'Holiday' : 'Closed');
       tr.classList.toggle('live', s.open);
       setText(inText, `${s.open ? 'closes' : 'opens'} in ${countdown(s.until - now)}`);
-      setText(sub, `${vanaHM(s.until)} · ${earth(s.until, 'time')}`);
+      // The open stretch in local time: the rest of today's when open, the next one when closed.
+      const closes = s.open ? s.until : s.until + (g.close - g.open) * V.HOUR;
+      setText(sub, s.open ? `open until ${earth(closes, 'time')}` : `open ${earthWhen(s.until, now)} to ${earth(closes, 'time')}`);
     } };
   }
   function renderGuilds(now) {
     const key = `${settings.guildCraft}|${settings.guildOpenOnly}|${gen}`;
     liveRows($('guilds'), key, now, () => {
-      let list = V.GUILDS.filter((g) => settings.guildCraft === 'all' || g.craft === settings.guildCraft);
+      let list = V.SHOPS.filter((g) => settings.guildCraft === 'all' || g.craft === settings.guildCraft);
       // With "open now" on, the list itself changes whenever any guild opens or closes.
       const expires = settings.guildOpenOnly ? Math.min(...list.map((g) => V.guildStatus(g, now).until)) : Infinity;
       if (settings.guildOpenOnly) list = list.filter((g) => V.guildStatus(g, now).open);
-      return { rows: list.length ? list.map(guildRow) : [emptyRow(7, 'No guild in this filter is open right now.')], expires };
+      return { rows: list.length ? list.map(guildRow) : [emptyRow(8, 'Nothing in this filter is open right now.')], expires };
     });
   }
   function buildGuildFilter() {
@@ -346,6 +383,47 @@
       chip('All', settings.guildCraft === 'all', () => { settings.guildCraft = 'all'; persist(); buildGuildFilter(); }),
       ...CRAFTS.map((c) => chip(c, settings.guildCraft === c, () => { settings.guildCraft = c; persist(); buildGuildFilter(); })),
     );
+  }
+
+  // ---- Weather ----
+  const ZONES = V.weatherZones();
+  const ZONE_NAME = new Map(ZONES.map((z) => [z.id, z.name]));
+  const ZONE_ID = new Map(ZONES.map((z) => [z.name.toLowerCase(), z.id]));
+  const ELEMENT_KEYS = ['fire', 'ice', 'wind', 'earth', 'lightning', 'water', 'light', 'dark'];
+  function weatherChip(id) {
+    const key = V.WEATHER_ELEMENT[id], double = V.isDoubleWeather(id);
+    return el('span', { class: `wx${key ? ` el-${key}` : ' plain'}${double ? ' double' : ''}`, title: key ? `${V.ELEMENTS[key]} weather${double ? ', double' : ''}` : null }, V.WEATHERS[id]);
+  }
+  // A zone box takes any spelling of a zone's name; an unknown name is flagged and leaves the setting alone.
+  function wireZoneInput(input, get, set, allowEmpty) {
+    input.value = ZONE_NAME.get(get()) || '';
+    input.addEventListener('change', () => {
+      const text = input.value.trim(), id = ZONE_ID.get(text.toLowerCase());
+      if (id != null) { input.value = ZONE_NAME.get(id); input.classList.remove('invalid'); set(id); persist(); }
+      else if (!text && allowEmpty) { input.classList.remove('invalid'); set(null); persist(); }
+      else input.classList.add('invalid');
+    });
+  }
+  function renderWeather(now) {
+    const zone = settings.wxZone;
+    liveRows($('wx-body'), `${zone}|${settings.wxCount}|${gen}`, now, () => {
+      if (!ZONE_NAME.has(zone)) return { rows: [emptyRow(6, 'Pick a zone to see its weather.')] };
+      const days = V.nextDays(now, settings.wxCount);
+      return { expires: days[0].end, rows: days.map((d) => {
+        const w = V.weatherOf(zone, d.dayNumber), tr = el('tr'), when = spanCell(tr, d.start, d.end);
+        tr.append(el('td', {}, dayName(d.weekday)), el('td', { class: 'hide-sm', text: earthWhen(d.start, now) }), when.td,
+          el('td', {}, weatherChip(w.normal)), el('td', {}, weatherChip(w.common)), el('td', {}, weatherChip(w.rare)));
+        return { tr, update: when.update };
+      }) };
+    });
+  }
+  function wireWeather() {
+    $('zone-list').replaceChildren(...ZONES.map((z) => el('option', { value: z.name })));
+    wireZoneInput($('wx-zone'), () => settings.wxZone, (id) => { settings.wxZone = id; });
+    const count = $('wx-count');
+    count.replaceChildren(...[8, 16, 32, 64].map((n) => { const o = el('option', { value: String(n), text: `${n} days` }); o.selected = n === settings.wxCount; return o; }));
+    count.addEventListener('change', (e) => { settings.wxCount = +e.target.value; persist(); });
+    $('wx-share').addEventListener('click', () => copyLink(`#weather&zone=${settings.wxZone}`));
   }
 
   // ---- Calendars ----
@@ -440,13 +518,65 @@
     ['Moon at 100%', { minPercent: 100 }],
     ['Lightsday daytime', { weekdays: [6], from: 6, to: 18 }],
   ];
+  const hasWeather = (q) => q.zone != null && q.weatherElements?.length > 0;
   function describeQuery(q) {
     const parts = [];
     if (q.weekdays?.length) parts.push(q.weekdays.map((d) => V.DAYS[d].name).join('/'));
     if (q.phases?.length) parts.push(q.phases.map((p) => V.MOON_PHASES[p]).join('/'));
     if (q.from != null) parts.push(`${pad(q.from)}:00-${pad(q.to ?? 24)}:00`);
     if (q.minPercent != null || q.maxPercent != null) parts.push(`moon ${q.minPercent ?? 0}-${q.maxPercent ?? 100}%`);
+    if (hasWeather(q)) {
+      parts.push(`${q.weatherDouble ? 'double ' : ''}${q.weatherElements.map((e) => V.ELEMENTS[e]).join('/')} weather in ${ZONE_NAME.get(q.zone)}${q.weatherChance === 'usual' ? ' (usual)' : ''}`);
+    }
     return parts.join(', ') || 'any time';
+  }
+
+  // ---- Share links ----
+  // #plan&day=7&moon=0&hours=20-4&pct=90-100&zone=103&wx=earth&double=1&chance=usual opens the
+  // planner with those conditions; #weather&zone=103 opens that zone's forecast.
+  function planHash(q) {
+    const p = new URLSearchParams();
+    if (q.weekdays.length) p.set('day', q.weekdays.join(','));
+    if (q.phases.length) p.set('moon', q.phases.join(','));
+    if (q.from != null) p.set('hours', `${q.from}-${q.to ?? 24}`);
+    if (q.minPercent != null || q.maxPercent != null) p.set('pct', `${q.minPercent ?? 0}-${q.maxPercent ?? 100}`);
+    if (q.zone != null) p.set('zone', String(q.zone));
+    if (q.weatherElements.length) p.set('wx', q.weatherElements.join(','));
+    if (q.weatherDouble) p.set('double', '1');
+    if (q.weatherChance === 'usual') p.set('chance', 'usual');
+    const s = p.toString();
+    return `#plan${s ? `&${s}` : ''}`;
+  }
+  function applyHash(hash) {
+    const p = new URLSearchParams((hash || '').replace(/^#/, ''));
+    const ints = (v, lo, hi) => (v || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n >= lo && n <= hi);
+    const pair = (v, lo, hi) => { const m = /^(\d+)-(\d+)$/.exec(v || ''); return m && +m[1] >= lo && +m[1] <= hi && +m[2] >= lo && +m[2] <= hi ? [+m[1], +m[2]] : null; };
+    if (p.has('plan')) {
+      const hours = pair(p.get('hours'), 0, 24), pct = pair(p.get('pct'), 0, 100), zone = Number(p.get('zone'));
+      settings.planner = {
+        ...EMPTY_QUERY,
+        weekdays: [...new Set(ints(p.get('day'), 0, 7))].sort((a, b) => a - b),
+        phases: [...new Set(ints(p.get('moon'), 0, 7))].sort((a, b) => a - b),
+        from: hours && hours[0] < 24 ? hours[0] : null, to: hours && hours[0] < 24 ? hours[1] || 24 : null,
+        minPercent: pct ? pct[0] : null, maxPercent: pct ? pct[1] : null,
+        zone: ZONE_NAME.has(zone) ? zone : null,
+        weatherElements: (p.get('wx') || '').split(',').filter((e) => ELEMENT_KEYS.includes(e)),
+        weatherDouble: p.get('double') === '1', weatherChance: p.get('chance') === 'usual' ? 'usual' : 'any',
+      };
+      persist();
+      return 'planner-panel';
+    }
+    if (p.has('weather') && ZONE_NAME.has(Number(p.get('zone')))) {
+      settings.wxZone = Number(p.get('zone'));
+      persist();
+      return 'weather-panel';
+    }
+    return null;
+  }
+  async function copyLink(hash) {
+    const url = location.href.split('#')[0] + hash;
+    try { history.replaceState(null, '', hash); } catch (e) {}
+    try { await navigator.clipboard.writeText(url); toast('Link copied', url); } catch (e) { toast('Copy this link', url); }
   }
   const isEmptyQuery = (q) => describeQuery(q) === 'any time';
   function buildPlanner() {
@@ -468,6 +598,18 @@
     to.disabled = q.from == null;
     $('pl-min').value = q.minPercent ?? '';
     $('pl-max').value = q.maxPercent ?? '';
+    $('pl-zone').value = ZONE_NAME.get(q.zone) || '';
+    $('pl-zone').classList.remove('invalid');
+    $('pl-chance').value = q.weatherChance;
+    $('pl-wx').replaceChildren(
+      ...ELEMENT_KEYS.map((k) => el('button', {
+        class: `chip el${q.weatherElements.includes(k) ? ' active' : ''}`, type: 'button', style: `--c: var(--${k})`, 'aria-pressed': q.weatherElements.includes(k) ? 'true' : 'false',
+        onclick: () => { q.weatherElements = q.weatherElements.includes(k) ? q.weatherElements.filter((x) => x !== k) : [...q.weatherElements, k]; persist(); buildPlanner(); },
+      }, V.ELEMENTS[k])),
+      el('button', {
+        class: `chip${q.weatherDouble ? ' active' : ''}`, type: 'button', 'aria-pressed': q.weatherDouble ? 'true' : 'false', title: 'Only double weather (Heat Wave, Sand Storm and so on)',
+        onclick: () => { q.weatherDouble = !q.weatherDouble; persist(); buildPlanner(); },
+      }, 'Double only'));
     $('planner-presets').replaceChildren(...PRESETS.map(([name, preset]) => el('button', {
       class: 'chip', type: 'button', onclick: () => { settings.planner = { ...EMPTY_QUERY, ...preset }; persist(); buildPlanner(); },
     }, name)));
@@ -484,21 +626,27 @@
     $('pl-min').addEventListener('change', percent('minPercent'));
     $('pl-max').addEventListener('change', percent('maxPercent'));
     $('pl-clear').addEventListener('click', () => { settings.planner = { ...EMPTY_QUERY }; persist(); buildPlanner(); });
+    wireZoneInput($('pl-zone'), () => q().zone, (id) => { q().zone = id; }, true);
+    $('pl-chance').addEventListener('change', (e) => { q().weatherChance = e.target.value === 'usual' ? 'usual' : 'any'; persist(); });
+    $('pl-share').addEventListener('click', () => copyLink(planHash(q())));
   }
-  function plannerRow(w, now) {
+  function plannerRow(w, now, q) {
     const tr = el('tr'), when = spanCell(tr, w.start, w.end), c = V.clock(w.start), m = V.moon(w.start);
     const vanaHours = (w.end - w.start) / V.HOUR;
+    const weather = hasWeather(q) ? V.weatherOf(q.zone, c.dayNumber) : null;
     tr.append(el('td', { text: earthWhen(w.start, now) }), el('td', { class: 'hide-sm', text: earthWhen(w.end, now) }),
       el('td', { class: 'hide-sm' }, countdown(w.end - w.start), el('span', { class: 'sub', text: ` (${vanaHours}h Vana'diel)` })), when.td,
-      el('td', {}, dayName(c.weekday), ` ${pad(c.hour)}:00 · ${m.percent}% ${V.MOON_PHASES[m.phase]}`));
+      el('td', { class: 'wrap' }, dayName(c.weekday), ` ${pad(c.hour)}:00 · ${m.percent}% ${V.MOON_PHASES[m.phase]}`,
+        weather ? el('span', { class: 'wx-line' }, ' · ', weatherChip(weather.normal), ' ', weatherChip(weather.common), ' ', weatherChip(weather.rare)) : null));
     return { tr, update: when.update };
   }
   function renderPlanner(now) {
     const q = settings.planner;
     liveRows($('pl-body'), `${JSON.stringify(q)}|${gen}`, now, () => {
-      if (isEmptyQuery(q)) return { rows: [emptyRow(5, 'Pick a day, a moon phase, an hour range or a moon percent, or start from a preset.')] };
+      if (q.weatherElements.length && q.zone == null) return { rows: [emptyRow(5, 'Pick a zone for the weather condition.')] };
+      if (isEmptyQuery(q)) return { rows: [emptyRow(5, 'Pick a day, a moon phase, an hour range, a moon percent or a zone\'s weather, or start from a preset.')] };
       const wins = V.findWindows(now, q, 8);
-      return { rows: wins.length ? wins.map((w) => plannerRow(w, now)) : [emptyRow(5, 'These conditions never line up.')], expires: wins.length ? wins[0].end : Infinity };
+      return { rows: wins.length ? wins.map((w) => plannerRow(w, now, q)) : [emptyRow(5, 'These conditions never line up.')], expires: wins.length ? wins[0].end : Infinity };
     });
   }
 
@@ -655,6 +803,17 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     });
     document.addEventListener('visibilitychange', tick);
     wirePlanner();
+    wireWeather();
+    wireDiscord();
+    window.addEventListener('hashchange', () => openTarget(applyHash(location.hash)));
+  }
+  // After a shared link is applied: refresh the controls it touched and bring its panel into view.
+  function openTarget(id) {
+    if (!id) return;
+    buildPlanner();
+    $('wx-zone').value = ZONE_NAME.get(settings.wxZone) || '';
+    tick();
+    requestAnimationFrame(() => $(id).scrollIntoView({ block: 'start' }));
   }
 
   function tick() {
@@ -662,7 +821,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     if (miniMode) { renderMini(now); return; }
     checkAlarms(now);
     if (!document.hidden) {
-      renderHero(now); renderRoutes(now); renderGuilds(now); renderCalendar(now); renderPlanner(now); renderAlarms(now);
+      renderHero(now); renderRoutes(now); renderGuilds(now); renderWeather(now); renderCalendar(now); renderPlanner(now); renderAlarms(now);
     }
     if (mini) renderMini(now);
   }
@@ -685,12 +844,14 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     $('mini-root').hidden = false;
     mini = makeMini($('mini-root'));
   } else {
+    const target = applyHash(location.hash);
     wire();
     paintToolbar();
     paintNotify();
     buildGuildFilter();
     buildCalendarControls();
     buildPlanner();
+    openTarget(target);
   }
   tick();
   startClock();

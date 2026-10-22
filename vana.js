@@ -193,33 +193,46 @@
     return out;
   }
 
-  // ---- Guild shops ----
+  // ---- Guild shops and other shops with hours ----
   // Hours are Vana'diel hours, open from `open` up to but not including `close`, and closed all day
-  // on the holiday (a DAYS index). From LandSandBoat's guild shop data.
-  const GUILDS = [
-    { craft: 'Alchemy', place: 'Bastok Mines', open: 8, close: 23, holiday: 6 },
-    { craft: 'Alchemy', place: 'Aht Urhgan Whitegate', open: 8, close: 23, holiday: 5 },
-    { craft: 'Bonecraft', place: 'Windurst Woods', open: 8, close: 23, holiday: 3 },
-    { craft: 'Clothcraft', place: 'Windurst Woods', open: 6, close: 21, holiday: 0 },
-    { craft: 'Clothcraft', place: 'Selbina', open: 6, close: 21, holiday: 0 },
-    { craft: 'Clothcraft', place: 'Al Zahbi', open: 6, close: 21, holiday: 0 },
-    { craft: 'Cooking', place: 'Windurst Waters', open: 5, close: 20, holiday: 7 },
-    { craft: 'Fishing', place: 'Port Windurst', open: 3, close: 18, holiday: 5 },
-    { craft: 'Fishing', place: 'Selbina', open: 3, close: 18, holiday: 5 },
-    { craft: 'Fishing', place: 'Bibiki Bay', open: 1, close: 18, holiday: 5 },
-    { craft: 'Fishing', place: 'Aht Urhgan Whitegate', open: 1, close: 18, holiday: 6 },
-    { craft: 'Goldsmithing', place: 'Bastok Markets', open: 8, close: 23, holiday: 4 },
-    { craft: 'Goldsmithing', place: 'Mhaura', open: 8, close: 23, holiday: 4 },
-    { craft: 'Goldsmithing', place: 'Al Zahbi', open: 8, close: 23, holiday: 4 },
-    { craft: 'Leathercraft', place: "Southern San d'Oria", open: 3, close: 18, holiday: 4 },
-    { craft: 'Smithing', place: 'Bastok Metalworks', open: 8, close: 23, holiday: 2 },
-    { craft: 'Smithing', place: "Northern San d'Oria", open: 8, close: 23, holiday: 2 },
-    { craft: 'Smithing', place: 'Mhaura', open: 8, close: 23, holiday: 2 },
-    { craft: 'Smithing', place: 'Al Zahbi', open: 8, close: 23, holiday: 2 },
-    { craft: 'Woodworking', place: "Northern San d'Oria", open: 6, close: 21, holiday: 0 },
-    { craft: 'Woodworking', place: 'Al Zahbi', open: 6, close: 21, holiday: 0 },
-    { craft: 'Woodworking', place: "Carpenters' Landing", open: 5, close: 22, holiday: 0 },
+  // on the holiday (a DAYS index). From LandSandBoat's guild shop data, which also gives hours to the
+  // Tenshodo, linkshell, chip and ferry fishing merchants. Merchants that share a place, hours and
+  // holiday share a row; `npc` lists them all.
+  const SHOPS = [
+    { kind: 'guild', craft: 'Alchemy', place: 'Bastok Mines', npc: 'Maymunah', open: 8, close: 23, holiday: 6 },
+    { kind: 'guild', craft: 'Alchemy', place: 'Aht Urhgan Whitegate', npc: 'Wahraga, Gathweeda', open: 8, close: 23, holiday: 5 },
+    { kind: 'guild', craft: 'Bonecraft', place: 'Windurst Woods', npc: 'Shih Tayuun', open: 8, close: 23, holiday: 3 },
+    { kind: 'guild', craft: 'Clothcraft', place: 'Windurst Woods', npc: 'Kuzah Hpirohpon', open: 6, close: 21, holiday: 0 },
+    { kind: 'guild', craft: 'Clothcraft', place: 'Selbina', npc: 'Tilala', open: 6, close: 21, holiday: 0 },
+    { kind: 'guild', craft: 'Clothcraft', place: 'Al Zahbi', npc: 'Taten-Bilten', open: 6, close: 21, holiday: 0 },
+    { kind: 'guild', craft: 'Cooking', place: 'Windurst Waters', npc: 'Kopopo', open: 5, close: 20, holiday: 7 },
+    { kind: 'guild', craft: 'Fishing', place: 'Port Windurst', npc: 'Babubu', open: 3, close: 18, holiday: 5 },
+    { kind: 'guild', craft: 'Fishing', place: 'Selbina', npc: 'Graegham, Mendoline', open: 3, close: 18, holiday: 5 },
+    { kind: 'guild', craft: 'Fishing', place: 'Bibiki Bay', npc: 'Mep Nhapopoluko', open: 1, close: 18, holiday: 5 },
+    { kind: 'guild', craft: 'Fishing', place: 'Aht Urhgan Whitegate', npc: 'Wahnid', open: 1, close: 18, holiday: 6 },
+    { kind: 'guild', craft: 'Goldsmithing', place: 'Bastok Markets', npc: 'Visala', open: 8, close: 23, holiday: 4 },
+    { kind: 'guild', craft: 'Goldsmithing', place: 'Mhaura', npc: 'Yabby Tanmikey', open: 8, close: 23, holiday: 4 },
+    { kind: 'guild', craft: 'Goldsmithing', place: 'Al Zahbi', npc: 'Bornahn', open: 8, close: 23, holiday: 4 },
+    { kind: 'guild', craft: 'Leathercraft', place: "Southern San d'Oria", npc: 'Kueh Igunahmori', open: 3, close: 18, holiday: 4 },
+    { kind: 'guild', craft: 'Smithing', place: 'Bastok Metalworks', npc: 'Amulya', open: 8, close: 23, holiday: 2 },
+    { kind: 'guild', craft: 'Smithing', place: "Northern San d'Oria", npc: 'Doggomehr', open: 8, close: 23, holiday: 2 },
+    { kind: 'guild', craft: 'Smithing', place: 'Mhaura', npc: 'Kamilah', open: 8, close: 23, holiday: 2 },
+    { kind: 'guild', craft: 'Smithing', place: 'Al Zahbi', npc: 'Ndego', open: 8, close: 23, holiday: 2 },
+    { kind: 'guild', craft: 'Woodworking', place: "Northern San d'Oria", npc: 'Chaupire', open: 6, close: 21, holiday: 0 },
+    { kind: 'guild', craft: 'Woodworking', place: 'Al Zahbi', npc: 'Dehbi Moshal', open: 6, close: 21, holiday: 0 },
+    { kind: 'guild', craft: 'Woodworking', place: "Carpenters' Landing", npc: 'Beugungel', open: 5, close: 22, holiday: 0 },
+    { kind: 'shop', craft: 'Tenshodo', place: 'Norg', npc: 'Achika, Chiyo, Jirokichi, Vuliaie', open: 9, close: 23, holiday: 7 },
+    { kind: 'shop', craft: 'Tenshodo', place: 'Port Bastok', npc: 'Jabbar, Silver Owl', open: 1, close: 23, holiday: 4 },
+    { kind: 'shop', craft: 'Tenshodo', place: 'Nashmau', npc: 'Tsutsuroon', open: 1, close: 23, holiday: 7 },
+    { kind: 'shop', craft: 'Linkshells', place: 'Port Bastok', npc: 'Ilita', open: 12, close: 20, holiday: 7 },
+    { kind: 'shop', craft: 'Linkshells', place: 'Port Windurst', npc: 'Khel Pahlhama', open: 12, close: 20, holiday: 7 },
+    { kind: 'shop', craft: 'Linkshells', place: "Southern San d'Oria", npc: 'Paunelie', open: 12, close: 20, holiday: 7 },
+    { kind: 'shop', craft: 'Chips', place: 'Port Bastok', npc: 'Blabbivix', open: 11, close: 22, holiday: 7 },
+    { kind: 'shop', craft: 'Chips', place: "Northern San d'Oria", npc: 'Gaudylox', open: 11, close: 22, holiday: 0 },
+    { kind: 'shop', craft: 'Chips', place: 'Windurst Walls', npc: 'Scavnix', open: 11, close: 22, holiday: 6 },
+    { kind: 'shop', craft: 'Fishing', place: 'Aboard the ferries', npc: 'Lokhong, Rajmonda, Pashi Maccaleh, Cehn Teyohngo, Jidwahn, Yahliq', open: 1, close: 23, holiday: 5 },
   ].map((g) => Object.freeze(g));
+  const GUILDS = SHOPS.filter((s) => s.kind === 'guild');
 
   function guildStatus(g, t) {
     const c = clock(t), holidayToday = c.weekday === g.holiday;
@@ -233,6 +246,38 @@
   function nextGuildOpening(g, t) {
     const s = guildStatus(g, t);
     return s.open ? guildStatus(g, s.until).until : s.until;
+  }
+
+  // ---- Weather ----
+  // Ids as the server numbers them. Each element has a single weather and a double one after it.
+  const WEATHERS = ['Clear', 'Sunshine', 'Clouds', 'Fog', 'Hot Spell', 'Heat Wave', 'Rain', 'Squall', 'Dust Storm', 'Sand Storm',
+    'Wind', 'Gales', 'Snow', 'Blizzards', 'Thunder', 'Thunderstorms', 'Auroras', 'Stellar Glare', 'Gloom', 'Darkness'];
+  const WEATHER_ELEMENT = [null, null, null, null, 'fire', 'fire', 'water', 'water', 'earth', 'earth', 'wind', 'wind',
+    'ice', 'ice', 'lightning', 'lightning', 'light', 'light', 'dark', 'dark'];
+  const isDoubleWeather = (w) => w >= 4 && w % 2 === 1;
+  const weatherIdsFor = (elements, doubleOnly) => WEATHERS.map((_, id) => id)
+    .filter((id) => elements.includes(WEATHER_ELEMENT[id]) && (!doubleOnly || isDoubleWeather(id)));
+
+  // Each zone follows a fixed 2,160-day cycle counted from the epoch. A day names three weathers;
+  // the server rolls among them every few minutes (normal most often, rare least), so a day can
+  // be forecast as likely and possible weathers, never as one certain weather. The tables come
+  // from weather-data.js, which the page loads beside this file and the tests pass in.
+  let weatherData = null, weatherIndex = null;
+  function useWeatherData(data) {
+    weatherData = data;
+    weatherIndex = new Map(data.zones.map((z) => [z[0], z]));
+  }
+  function weatherOf(zoneId, dayNumber) {
+    if (!weatherIndex && root.VanaWeatherData) useWeatherData(root.VanaWeatherData);
+    const z = weatherIndex && weatherIndex.get(zoneId);
+    if (!z) return null;
+    const [palette, days] = weatherData.patterns[z[2]];
+    const v = palette[weatherData.alphabet.indexOf(days[mod(dayNumber, weatherData.cycle)])];
+    return { normal: v >> 10, common: (v >> 5) & 31, rare: v & 31 };
+  }
+  function weatherZones() {
+    if (!weatherIndex && root.VanaWeatherData) useWeatherData(root.VanaWeatherData);
+    return weatherData ? weatherData.zones.map(([id, name]) => ({ id, name })) : [];
   }
 
   // ---- Calendars and the planner ----
@@ -251,16 +296,27 @@
     return from < to ? [[from, to]] : [[0, to], [from, 24]];
   }
 
-  // Windows from t on when every condition holds, merged across midnights. Weekday and moon are
-  // per-day conditions; hours narrow each matching day. A window already open at t is included.
-  function findWindows(t, query, count = 8, horizonDays = 2016) {
+  // Windows from t on when every condition holds, merged across midnights. Weekday, moon and weather
+  // are per-day conditions; hours narrow each matching day. A window already open at t is included.
+  // Weather needs a zone and elements; weatherChance 'usual' accepts only the day's normal weather.
+  // Weekdays repeat every 8 days, the moon every 84 and weather every 2,160, so every combination
+  // recurs within their least common multiple, 15,120 days: a search that long that finds nothing
+  // means never.
+  const FULL_CYCLE = 15120;
+  function findWindows(t, query, count = 8, horizonDays = FULL_CYCLE) {
     const q = query || {}, segs = hourSegments(q.from, q.to);
     const minP = q.minPercent ?? 0, maxP = q.maxPercent ?? 100;
+    const wxIds = q.zone != null && q.weatherElements && q.weatherElements.length ? weatherIdsFor(q.weatherElements, q.weatherDouble) : null;
+    const weatherMatches = (n) => {
+      const w = weatherOf(q.zone, n);
+      return !!w && (wxIds.includes(w.normal) || (q.weatherChance !== 'usual' && (wxIds.includes(w.common) || wxIds.includes(w.rare))));
+    };
     const dayMatches = (n) => {
       const m = moonOfDay(n);
       return (!q.weekdays || !q.weekdays.length || q.weekdays.includes(mod(n, 8)))
         && (!q.phases || !q.phases.length || q.phases.includes(m.phase))
-        && m.percent >= minP && m.percent <= maxP;
+        && m.percent >= minP && m.percent <= maxP
+        && (!wxIds || weatherMatches(n));
     };
     const out = [];
     let cur = null;
@@ -285,10 +341,11 @@
 
   const Vana = {
     SEC, MIN, HOUR, DAY, WEEK, MONTH, YEAR, EPOCH, BASE_YEAR, EARTH_DAY, JST,
-    ELEMENTS, DAYS, MOON_PHASES, FULL, NEW, RSE_RACES, RSE_PLACES, RSE_DUNGEONS, RSE_GEAR, RUNS, ROUTES, GUILDS,
+    ELEMENTS, DAYS, MOON_PHASES, FULL, NEW, RSE_RACES, RSE_PLACES, RSE_DUNGEONS, RSE_GEAR, RUNS, ROUTES, SHOPS, GUILDS,
     mod, clock, dayStartOf, minuteOfDay, isDaytime, phaseOf, moonOfDay, moon, nextPhaseChange,
     rse, rseOfWeek, rseWeeks, nextJpMidnight, nextConquestTally,
     routeStatus, nextDeparture, departureMinutes, guildStatus, nextGuildOpening,
+    WEATHERS, WEATHER_ELEMENT, isDoubleWeather, weatherIdsFor, useWeatherData, weatherOf, weatherZones,
     nextDays, hourSegments, findWindows,
   };
   if (typeof module === 'object' && module.exports) module.exports = Vana;

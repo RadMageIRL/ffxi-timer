@@ -229,8 +229,17 @@ test('the Bastok alchemy guild is closed all Lightsday and reopens Darksday at 0
 test('the next opening of an open guild is the following morning', () => {
   assert.equal(V.nextGuildOpening(ALCHEMY, at(FIRESDAY, 9)), at(FIRESDAY + 1, 8));
 });
-test('every guild has hours inside one day and a real holiday', () => {
-  for (const g of V.GUILDS) assert.ok(g.open < g.close && g.close <= 24 && g.holiday >= 0 && g.holiday < 8, `${g.craft} ${g.place}`);
+test('every shop has hours inside one day, a real holiday and a named NPC', () => {
+  for (const g of V.SHOPS) assert.ok(g.open < g.close && g.close <= 24 && g.holiday >= 0 && g.holiday < 8 && g.npc, `${g.craft} ${g.place}`);
+});
+test('no NPC is listed for two shops, so each can key its own alarm', () => {
+  const names = V.SHOPS.flatMap((g) => g.npc.split(', '));
+  assert.equal(new Set(names).size, names.length);
+});
+test('the Norg Tenshodo opens at 09:00 and closes on Darksday', () => {
+  const g = V.SHOPS.find((s) => s.craft === 'Tenshodo' && s.place === 'Norg');
+  assert.deepEqual(V.guildStatus(g, at(FIRESDAY, 8)), { open: false, holiday: false, until: at(FIRESDAY, 9) });
+  assert.equal(V.guildStatus(g, at(FIRESDAY + 7, 12)).holiday, true);
 });
 
 // ---- Calendars and planner ----
@@ -260,9 +269,57 @@ test('a full moon already under way is reported from its first day at 90% waxing
   assert.deepEqual([w.start, w.end], [V.dayStartOf(anchorDay - 4), V.dayStartOf(anchorDay + 3)]);
   assert.deepEqual([V.moon(w.start).percent, V.moon(w.start).direction], [90, 'waxing']);
 });
+test('weekday, moon and weather cycles all repeat within the planner search span', () => {
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a), lcm = (a, b) => (a * b) / gcd(a, b);
+  const span = [8, 84, 2160].reduce(lcm);
+  assert.equal(span, 15120);
+  const [w] = V.findWindows(at(FIRESDAY), { weekdays: [3] }, 1, span);
+  assert.ok(w, 'a plain condition is found inside the span');
+});
+test('conditions that cannot coincide return no windows', () => {
+  assert.deepEqual(V.findWindows(at(FIRESDAY), { phases: [V.NEW], minPercent: 50 }, 3), []);
+});
 test('a moon percent range keeps only days inside it', () => {
   const wins = V.findWindows(at(FIRESDAY), { minPercent: 95 }, 4);
   for (const w of wins) for (let t = w.start; t < w.end; t += V.DAY) assert.ok(V.moon(t).percent >= 95);
+});
+
+// ---- Weather ----
+// Reference days read straight from LandSandBoat's zone_weather.sql with a separate parser.
+V.useWeatherData(createRequire(import.meta.url)('../weather-data.js'));
+const VALKURM = 103, QUFIM = 126, CYCLE_START = 2160 * 111; // a day number at the start of a weather cycle
+const wx = (zone, day) => { const w = V.weatherOf(zone, day); return [w.normal, w.common, w.rare].map((id) => V.WEATHERS[id]); };
+test('Valkurm Dunes starts its cycle with sunshine, dust storms common and rare', () => {
+  assert.deepEqual(wx(VALKURM, 0), ['Sunshine', 'Dust Storm', 'Dust Storm']);
+  assert.deepEqual(wx(VALKURM, 2), ['Sunshine', 'Sunshine', 'Sunshine']);
+});
+test('Valkurm Dunes cycle day 17 is usually a dust storm', () => {
+  assert.deepEqual(wx(VALKURM, 17), ['Dust Storm', 'Sunshine', 'Sunshine']);
+});
+test('Qufim Island cycle day 11 brings Stellar Glare only as its rare weather', () => {
+  assert.deepEqual(wx(QUFIM, 11), ['Clouds', 'Sunshine', 'Stellar Glare']);
+});
+test('weather repeats every 2,160 days counted from the epoch', () => {
+  for (const d of [0, 17, 2159]) assert.deepEqual(V.weatherOf(VALKURM, d + CYCLE_START), V.weatherOf(VALKURM, d));
+  assert.equal(V.weatherOf(9999, 0), null);
+});
+test('each element has a single weather and a double one', () => {
+  assert.deepEqual(V.weatherIdsFor(['earth'], false).map((id) => V.WEATHERS[id]), ['Dust Storm', 'Sand Storm']);
+  assert.deepEqual(V.weatherIdsFor(['light', 'dark'], true).map((id) => V.WEATHERS[id]), ['Stellar Glare', 'Darkness']);
+  assert.equal(V.weatherIdsFor(['fire', 'ice', 'wind', 'earth', 'lightning', 'water', 'light', 'dark'], false).length, 16);
+});
+test('the planner finds Valkurm days whose usual weather is a dust storm', () => {
+  const wins = V.findWindows(at(CYCLE_START, 3), { zone: VALKURM, weatherElements: ['earth'], weatherChance: 'usual' }, 3);
+  assert.deepEqual(wins.map((w) => (w.start - V.dayStartOf(CYCLE_START)) / V.DAY), [17, 24, 60]);
+  assert.ok(wins.every((w) => w.end - w.start === V.DAY));
+});
+test('with any chance, a day where dust storms are only common counts too', () => {
+  const [w] = V.findWindows(at(CYCLE_START, 3), { zone: VALKURM, weatherElements: ['earth'] }, 1);
+  assert.equal(w.start, V.dayStartOf(CYCLE_START));
+});
+test('a weather condition without a zone is ignored rather than matching nothing', () => {
+  const [w] = V.findWindows(at(FIRESDAY, 3), { weekdays: [7], weatherElements: ['earth'] }, 1);
+  assert.equal(V.clock(w.start).weekday, 7);
 });
 
 // ---- User-facing copy agrees with the data ----
@@ -271,7 +328,8 @@ const count = (group) => V.ROUTES.filter((r) => r.group === group).length;
 test('the About dialog counts match the route and guild data', () => {
   assert.match(html, new RegExp(`All ${count('airship')} airships`));
   assert.match(html, new RegExp(`the ${count('ferry')} Selbina, Mhaura, Whitegate and Nashmau boats`));
-  assert.match(html, new RegExp(`${V.GUILDS.length} guild shops`));
+  assert.match(html, new RegExp(`${V.GUILDS.length} guild shops and ${V.SHOPS.length - V.GUILDS.length} other shops`));
+  assert.match(html, new RegExp(`weather forecast for ${V.weatherZones().length} zones`));
 });
 test('the About dialog example departure is what the data gives', () => {
   const [first] = V.departureMinutes(ROUTE['jeuno-sandoria']);

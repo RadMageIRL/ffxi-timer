@@ -16,13 +16,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
-  <title>FFXI Timer v0.1 - Vana'diel clock, ships and guilds</title>
+  <title>FFXI Timer v0.2 - Vana'diel clock, ships and guilds</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app" id="app">
     <header class="topbar">
-      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.1 · vana'diel clock · ships · guilds · alarms</span></div>
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.2 · vana'diel clock · ships · guilds · alarms</span></div>
       <nav class="toolbar" aria-label="Controls">
         <button class="button" id="hour-toggle" type="button" title="Earth times in 12 or 24 hour format">12h</button>
         <button class="button" id="sound-toggle" type="button" title="Play a chime when an alarm fires">Sound: on</button>
@@ -104,15 +104,34 @@
 
     <section class="panel" id="guild-panel" aria-labelledby="guild-title">
       <div class="panel-head">
-        <h2 id="guild-title">Guilds</h2>
+        <h2 id="guild-title">Guilds and shops</h2>
         <div class="chips" id="guild-filter"></div>
       </div>
       <div class="table-wrap">
         <table class="grid guilds">
-          <thead><tr><th>Craft</th><th>Place</th><th class="hide-sm">Hours</th><th class="hide-sm">Holiday</th><th>Status</th><th>Changes in</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
+          <thead><tr><th>Shop</th><th class="hide-sm">NPC</th><th>Place</th><th class="hide-sm">Hours</th><th class="hide-sm">Holiday</th><th>Status</th><th>Next</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
           <tbody id="guilds"></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="panel" id="weather-panel" aria-labelledby="weather-title">
+      <div class="panel-head">
+        <h2 id="weather-title">Weather</h2>
+        <div class="option-group">
+          <input class="select zone-input" id="wx-zone" list="zone-list" placeholder="Zone" aria-label="Weather zone" autocomplete="off" spellcheck="false">
+          <select class="select" id="wx-count" aria-label="Days to show"></select>
+          <button class="button small" id="wx-share" type="button" title="Copy a link that opens this zone's forecast">Copy link</button>
+        </div>
+      </div>
+      <p class="hint">Each zone's weather follows a fixed 2,160-day cycle. Every Vana'diel day names a usual, a common and a rare weather, and the game switches among those three during the day, so this is a forecast of odds, not a promise. Double weather is in bold.</p>
+      <div class="table-wrap">
+        <table class="grid weather">
+          <thead><tr><th>Vana'diel day</th><th class="hide-sm">Starts</th><th>In</th><th>Usual</th><th>Common</th><th>Rare</th></tr></thead>
+          <tbody id="wx-body"></tbody>
+        </table>
+      </div>
+      <datalist id="zone-list"></datalist>
     </section>
 
     <section class="panel" id="calendar-panel" aria-labelledby="calendar-title">
@@ -144,6 +163,15 @@
         <div class="option-group"><span class="option-label">Day</span><div class="chips" id="pl-days"></div></div>
         <div class="option-group"><span class="option-label">Moon</span><div class="chips" id="pl-phases"></div></div>
         <div class="option-group">
+          <span class="option-label">Weather</span>
+          <input class="select zone-input" id="pl-zone" list="zone-list" placeholder="Zone" aria-label="Zone for the weather condition" autocomplete="off" spellcheck="false">
+          <div class="chips" id="pl-wx"></div>
+          <select class="select" id="pl-chance" aria-label="How likely the weather has to be">
+            <option value="any">any chance</option>
+            <option value="usual">usual weather only</option>
+          </select>
+        </div>
+        <div class="option-group">
           <span class="option-label">Hours</span>
           <select class="select" id="pl-from" aria-label="From Vana'diel hour"></select>
           <span class="muted">to</span>
@@ -153,6 +181,7 @@
           <span class="muted">to</span>
           <input class="num" id="pl-max" type="number" min="0" max="100" step="1" aria-label="Maximum moon percent">
           <button class="button small" id="pl-clear" type="button">Clear</button>
+          <button class="button small" id="pl-share" type="button" title="Copy a link that opens the planner with these conditions">Copy link</button>
           <button class="bell labeled" type="button" data-alarm="planner:" id="pl-alarm" aria-label="Alarm when the next window opens"><span>Alarm</span></button>
         </div>
       </div>
@@ -181,6 +210,14 @@
         </table>
       </div>
       <p class="hint" id="alarm-hint">Use a bell anywhere on the page to add an alarm. They live in this browser and only fire while this page is open; a minimized tab can fire a few seconds late.</p>
+      <div class="option-group discord-row">
+        <span class="option-label">Discord</span>
+        <input class="select wide" id="discord-url" type="url" placeholder="Webhook URL (optional)" aria-label="Discord webhook URL" autocomplete="off" spellcheck="false">
+        <button class="button small" id="discord-save" type="button">Save</button>
+        <button class="button small" id="discord-test" type="button">Send test</button>
+        <span class="hint inline" id="discord-status"></span>
+      </div>
+      <p class="hint">With a webhook saved, every alarm also posts to that Discord channel. The URL stays in this browser and is sent only to Discord.</p>
     </section>
 
     <footer class="footer">
@@ -194,7 +231,7 @@
 
   <dialog class="about" id="about-dialog" aria-labelledby="about-title">
     <form method="dialog" class="about-body">
-      <h2 id="about-title">ffxi-timer v0.1</h2>
+      <h2 id="about-title">ffxi-timer v0.2</h2>
       <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from the Earth clock; nothing is fetched and nothing leaves the browser.</p>
       <h3>What it shows</h3>
       <ul>
@@ -202,13 +239,15 @@
         <li>Moon percent and phase, with the next phase change, full moon and new moon</li>
         <li>JP midnight, the weekly conquest tally (Monday 00:00 JST) and this week's RSE race and dungeon</li>
         <li>All 8 airships, the 6 Selbina, Mhaura, Whitegate and Nashmau boats, the Manaclipper and the Phanauet barge: boarding status, departure in Vana'diel and local time, countdown and landing time</li>
-        <li>22 guild shops with hours, holidays and open or closed status</li>
+        <li>22 guild shops and 10 other shops with set hours (Tenshodo, linkshells, chips, ferry fishing), with each NPC, holiday, open or closed status and the next open stretch in local time</li>
         <li>Day, moon and RSE calendars, and a planner that finds when weekday, hour and moon conditions next line up</li>
         <li>RSE details for any week: the chest key to trade, every monster that drops it, your race's set pieces and the sachet NM</li>
-        <li>Alarms with browser notifications and a chime, and a mini clock that stays on top of the game window (Chrome and Edge)</li>
+        <li>A weather forecast for 189 zones, and weather as a planner condition</li>
+        <li>Copy link buttons that share a planner search or a zone's forecast</li>
+        <li>Alarms with browser notifications, a chime and optional Discord posts, and a mini clock that stays on top of the game window (Chrome and Edge)</li>
       </ul>
       <h3>Accuracy</h3>
-      <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours and the RSE quest steps come from LandSandBoat's data and scripts.</p>
+      <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours, the RSE quest steps and the weather cycles come from LandSandBoat's data and scripts. Weather is a forecast of odds: each day names three weathers and the game moves among them.</p>
       <h3>Shortcuts</h3>
       <p><kbd>T</kbd> theme · <kbd>M</kbd> mini clock · <kbd>?</kbd> this dialog</p>
       <div class="about-actions"><button class="button" value="close">Close</button></div>
@@ -217,6 +256,7 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
+  <script src="weather-data.js"></script>
   <script src="vana.js"></script>
   <script src="app.js"></script>
 </body>

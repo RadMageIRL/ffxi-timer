@@ -1,22 +1,48 @@
-# ffxi-timer v0.1
+# ffxi-timer v0.2
 
-A Vana'diel clock and schedule board for Final Fantasy XI, in the spirit of Pyogenes' [FFXI Time Information](https://www.pyogenes.com/ffxi/timer/v2.html) page, rebuilt with current schedule data, alarms and a planner.
+A Vana'diel clock and schedule board for Final Fantasy XI: the time, the moon, every airship and ferry, guild and shop hours, RSE, weather, a planner for lining conditions up, and alarms. It follows in the footsteps of Pyogenes' [FFXI Time Information](https://www.pyogenes.com/ffxi/timer/v2.html) page, rebuilt with current schedule data.
 
-It is a plain HTML page with no build step and no server. I open `index.html` in a browser and it works out everything from the Earth clock. Nothing is fetched and nothing leaves the browser; settings, starred routes and alarms stay in that browser's local storage.
+**Use it: [radmageirl.github.io/ffxi-timer](https://radmageirl.github.io/ffxi-timer/)**
+
+![ffxi-timer in the Vana'diel theme: the clock on Earthsday 10:50 with a 74% waning moon, and the airship board with Jeuno to Kazham and Windurst to Jeuno boarding](screenshots/ffxi-timer-v0.2-vana.png)
+
+It is a plain HTML page with no build step and no server. Everything is worked out in the browser from the Earth clock; nothing is fetched and nothing is sent anywhere, except alarm posts to a Discord webhook if you set one. Settings, starred routes and alarms stay in that browser's local storage.
 
 ## What it shows
 
-- Vana'diel time and date, the weekday's day bonus and day penalty elements, daytime or nighttime, and a countdown to the next day
-- Moon percent and phase with a drawn moon, the next phase change, and when the next full and new moons begin
+**Vana'diel now**
+- The time and C.E. date, the weekday's day bonus and day penalty elements, daytime or nighttime, and a countdown to the next day
+- The moon's percent and phase, drawn, with the next phase change and when the next full and new moons begin
 - JP midnight, the weekly conquest tally (Monday 00:00 JST), and this week's RSE race and dungeon
-- Every airship (including Kazham), the Selbina, Mhaura, Aht Urhgan Whitegate and Nashmau boats, the Manaclipper and the Phanauet barge: boarding status, the departure in Vana'diel and local time, a countdown, and the landing time
-- 22 guild shops, including the Mhaura, Selbina, Al Zahbi, Whitegate, Bibiki Bay and Carpenters' Landing ones, with hours, holidays and open, closed or holiday status
+
+**Ships and airships**
+- All 8 airships (Kazham included), the Selbina, Mhaura, Aht Urhgan Whitegate and Nashmau ferries, the Manaclipper and the Phanauet barge
+- Boarding status, the departure in Vana'diel and local time with a countdown, and when you land
+- Star the routes you use to keep them on their own tab and in the mini clock
+
+**Guilds and shops**
+- 22 guild shops, including the ones in Mhaura, Selbina, Al Zahbi, Whitegate, Bibiki Bay and Carpenters' Landing, plus the Tenshodo, linkshell, chip and ferry fishing merchants that keep hours
+- Each NPC's name, hours and holiday, open, closed or holiday right now, and the next open stretch in your local time
+
+**Weather**
+- A forecast for 189 zones: for each Vana'diel day, the usual, common and rare weather, with double weather in bold
+- Each zone's weather follows a fixed 2,160-day cycle and the game switches among a day's three weathers, so this is a forecast of odds, not a promise
+
+**Calendars and RSE**
 - Day, moon and RSE calendars, filterable by weekday, phase or race
 - RSE details for any week: the chest key to trade, every monster that drops it, your race's set pieces, and the ??? that pops the sachet NM
-- A planner that finds when a weekday, an hour range and a moon phase or percent next line up, with presets
-- Alarms on any departure, guild opening, reset, moon phase or planner window, with a toast, a chime and a browser notification
-- A mini clock that stays on top of the game window (Chrome and Edge), showing starred routes
-- System, light, dark and Vana'diel themes on the **Theme** button, following the system setting by default
+
+**Planner**
+- Pick weekdays, an hour range, moon phases or a moon percent, and a zone's weather; it lists when they next line up in Earth time
+- Weekdays, the moon and weather all repeat within 15,120 Vana'diel days and the planner searches all of them, so "never" means never
+- **Copy link** shares a search or a zone's forecast as a URL
+
+**Alarms**
+- A bell on any departure, shop opening, reset, moon phase or planner window
+- A toast, a chime and a browser notification, plus an optional post to a Discord channel through a webhook
+- A **Mini clock** that stays on top of the game window (Chrome and Edge) and shows your starred routes
+
+**Themes**: system, light, dark and Vana'diel (the game's blue menu windows) on the **Theme** button.
 
 ## Accuracy
 
@@ -28,13 +54,13 @@ Fixed compared with the old timer:
 
 - 38% waxing is a Waxing Crescent everywhere; the old page's moon display calls that day a First Quarter while its day calendar calls it a Waxing Crescent
 - The old page rebuilds every panel's HTML 20 times a second, and lists flickering in Mozilla as a known issue; this one rewrites only the text that changed
-- Schedules cover the Aht Urhgan boats, the Manaclipper, the barge and the outlying guild shops, which the old page predates
+- The Aht Urhgan ferries, the Manaclipper, the barge, the outlying guild shops and weather are all new
 
-## Run it
+## Run it locally
 
-Download or clone this repository, then open `index.html` in a modern browser. There is no install step.
+Download or clone this repository and open `index.html` in a modern browser. There is no install step.
 
-Alarms only fire while the page is open. The mini clock uses Document Picture-in-Picture where the browser has it and a small popup window everywhere else.
+Alarms and Discord posts only fire while the page is open. The mini clock uses Document Picture-in-Picture where the browser has it and a small popup window everywhere else.
 
 ## Shortcuts
 
@@ -50,11 +76,13 @@ Alarms only fire while the page is open. The mini clock uses Document Picture-in
 node tests/run.mjs
 ```
 
-No dependencies. The tests cover the clock, moon, RSE, resets, every ship schedule, guild hours, the planner, and the counts the About dialog states.
+No dependencies. The tests cover the clock, moon, RSE, resets, every ship schedule, shop hours, weather, the planner, and the counts the About dialog states.
+
+`weather-data.js` is generated by `tools/build-weather.mjs` from LandSandBoat's `sql/zone_weather.sql` and `data/enums/zone.yaml`; the script checks every zone and day against its source before it writes.
 
 ## Data
 
-Ship schedules, guild hours, chest key drops and the RSE quest steps come from [LandSandBoat](https://github.com/LandSandBoat/server)'s data and scripts. The code here is my own.
+Ship schedules, shop hours, chest key drops, the RSE quest steps and the weather cycles come from [LandSandBoat](https://github.com/LandSandBoat/server)'s data and scripts. The code here is my own.
 
 FINAL FANTASY is a registered trademark of Square Enix. This project is not affiliated with Square Enix.
 
