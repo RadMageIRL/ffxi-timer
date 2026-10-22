@@ -23,6 +23,7 @@
     hour12: null, sound: true, starred: [], routeTab: 'airship', guildCraft: 'all', guildOpenOnly: false,
     calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
     wxZone: 103, wxCount: 16, discord: '', wxFind: [], wxFindDays: 16, starredZones: [], savedPlans: [],
+    view: 'full', tripFrom: 'Port Bastok', tripTo: 'Kazham', tripTransfer: 1,
   };
   const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
   settings.planner = { ...EMPTY_QUERY, ...settings.planner };
@@ -350,8 +351,69 @@
     });
   }
 
+  // ---- Trips ----
+  // Ports are listed under the kind of run that leaves them; To only offers ports a trip can reach.
+  const PORT_GROUP = Object.fromEntries(V.PORTS.map((p) => [p, V.ROUTES.find((r) => r.from === p).group]));
+  const PORT_GROUPS = [['airship', 'Airships'], ['ferry', 'Ferries'], ['manaclipper', 'Manaclipper'], ['barge', 'Phanauet barge']];
+  const TRANSFERS = [0, 1, 2, 3, 5];
+  function portOptions(select, ports, value) {
+    select.replaceChildren(...PORT_GROUPS.map(([group, label]) => {
+      const list = ports.filter((p) => PORT_GROUP[p] === group);
+      return list.length ? el('optgroup', { label }, list.map((p) => { const o = el('option', { value: p, text: p }); o.selected = p === value; return o; })) : null;
+    }));
+  }
+  function buildTripControls() {
+    if (!V.PORTS.includes(settings.tripFrom)) settings.tripFrom = DEFAULTS.tripFrom;
+    const reach = V.portsFrom(settings.tripFrom);
+    if (!reach.includes(settings.tripTo)) settings.tripTo = reach[0];
+    portOptions($('trip-from'), V.PORTS, settings.tripFrom);
+    portOptions($('trip-to'), reach, settings.tripTo);
+  }
+  function wireTrips() {
+    $('trip-from').addEventListener('change', (e) => { settings.tripFrom = e.target.value; buildTripControls(); persist(); });
+    $('trip-to').addEventListener('change', (e) => { settings.tripTo = e.target.value; persist(); });
+    $('trip-swap').addEventListener('click', () => { [settings.tripFrom, settings.tripTo] = [settings.tripTo, settings.tripFrom]; buildTripControls(); persist(); });
+    const transfer = $('trip-transfer');
+    transfer.replaceChildren(...TRANSFERS.map((n) => { const o = el('option', { value: String(n), text: n ? `${n} min` : 'none' }); o.selected = n === settings.tripTransfer; return o; }));
+    transfer.addEventListener('change', (e) => { settings.tripTransfer = +e.target.value; persist(); });
+    buildTripControls();
+  }
+  function tripRow(trip, now) {
+    const first = trip.legs[0], tr = el('tr'), chip = el('span', { class: 'state boarding', text: 'Boarding' }), inText = el('span', { class: 'count' });
+    // One line per leg; between legs, where to change and how long the wait is.
+    const legs = trip.legs.flatMap((l, i) => [
+      i ? el('div', { class: 'sub', text: `change at ${short(l.route.from)}, wait ${countdown(l.departs - trip.legs[i - 1].lands)}, leaves ${earth(l.departs, 'time')}` }) : null,
+      el('div', {}, `${vanaHM(l.departs)} ${GROUP[l.route.group]} ${short(l.route.from)}`, el('span', { class: 'arrow', text: '→' }), short(l.route.to)),
+    ]);
+    tr.append(
+      el('td', { class: 'hide-sm' }, vanaHM(trip.departs), el('div', { class: 'sub', text: earthWhen(trip.departs, now) })),
+      el('td', { class: 'wrap route-name' }, ...legs),
+      el('td', {}, vanaHM(trip.lands), el('div', { class: 'sub', text: earthWhen(trip.lands, now) })),
+      el('td', { class: 'hide-sm', text: countdown(trip.lands - trip.departs) }),
+      el('td', {}, chip, ' ', inText),
+      el('td', { class: 'c-bell' }, bell(`route:${first.route.id}`, `Alarm before ${first.route.from} to ${first.route.to} departs`)));
+    return { tr, update(n) {
+      const s = V.routeStatus(first.route, n), boarding = s.state === 'boarding' && s.departs === first.departs;
+      chip.hidden = !boarding;
+      tr.classList.toggle('live', boarding);
+      setText(inText, countdown(first.departs - n));
+    } };
+  }
+  const TRIP_ROWS = 5;
+  function renderTrips(now) {
+    const { tripFrom: from, tripTo: to, tripTransfer: transfer } = settings;
+    liveRows($('trips'), `${from}|${to}|${transfer}|${gen}`, now, () => {
+      const trips = V.findTrips(from, to, now, TRIP_ROWS, transfer * 60000);
+      return { rows: trips.length ? trips.map((t) => tripRow(t, now)) : [emptyRow(6, 'No boat or airship links these ports.')], expires: trips.length ? trips[0].departs : Infinity };
+    });
+  }
+
   // ---- Guilds ----
   const CRAFTS = [...new Set(V.SHOPS.map((g) => g.craft))];
+  function paintGuildChip(chip, s) {
+    setClass(chip, `state ${s.open ? 'open' : s.holiday ? 'holiday' : 'closed'}`);
+    setText(chip, s.open ? 'Open' : s.holiday ? 'Holiday' : 'Closed');
+  }
   function guildRow(g) {
     const chip = el('span', { class: 'state' }), inText = el('span', { class: 'count' }), sub = el('div', { class: 'sub' });
     const tr = el('tr', {},
@@ -362,8 +424,7 @@
       el('td', { class: 'c-bell' }, bell(`guild:${guildKey(g)}`, `Alarm before the ${shopName(g)} in ${g.place} opens`)));
     return { tr, update(now) {
       const s = V.guildStatus(g, now);
-      setClass(chip, `state ${s.open ? 'open' : s.holiday ? 'holiday' : 'closed'}`);
-      setText(chip, s.open ? 'Open' : s.holiday ? 'Holiday' : 'Closed');
+      paintGuildChip(chip, s);
       tr.classList.toggle('live', s.open);
       setText(inText, `${s.open ? 'closes' : 'opens'} in ${countdown(s.until - now)}`);
       // The open stretch in local time: the rest of today's when open, the next one when closed.
@@ -477,6 +538,7 @@
   const FIND_WEATHERS = V.WEATHERS.map((_, id) => id).filter((id) => id > 0);
   const TIERS = ['Usual', 'Common', 'Rare'];
   function openForecast(zoneId) {
+    showFull();
     settings.wxZone = zoneId; persist();
     $('wx-zone').value = ZONE_NAME.get(zoneId) || '';
     $('weather-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -488,6 +550,7 @@
     return el('td', { class: 'wrap zones', title: more ? group.zones.map((z) => z.name).join(', ') : null }, ...links, more ? ` and ${more} more` : null);
   }
   function findFor(ids) {
+    showFull();
     settings.wxFind = ids; persist(); buildFinderChips();
     $('finder-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -925,6 +988,77 @@
     b.disabled = Notification.permission !== 'default';
   }
 
+  // ---- Simple view ----
+  // The clock, moon and resets cards stay; below them every departure in the order they leave, the
+  // guilds, and the next eight days with your starred zones' usual weather. The other panels hide.
+  const VIEWS = ['full', 'simple'];
+  function applyView() {
+    document.documentElement.classList.toggle('simple-view', settings.view === 'simple');
+    document.querySelectorAll('#view-tabs button').forEach((b) => {
+      const on = b.dataset.view === settings.view;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  function setView(view) {
+    if (!VIEWS.includes(view) || view === settings.view) return;
+    settings.view = view;
+    persist();
+    applyView();
+    tick();
+  }
+  // Links into a panel that simple view hides switch back to the full view first.
+  const showFull = () => setView('full');
+  function simpleRouteRow(r) {
+    const tr = el('tr'), chip = el('span', { class: 'state boarding', text: 'Boarding' }), departs = el('td'), local = el('td', { class: 'hide-sm' }), inText = el('span', { class: 'count' });
+    tr.append(
+      el('td', { class: 'route-name', title: `${GROUP[r.group]}, ${r.from} to ${r.to}` }, settings.starred.includes(r.id) ? el('span', { class: 'star-mark', text: '★ ' }) : null,
+        short(r.from), el('span', { class: 'arrow', text: '→' }), short(r.to), el('span', { class: 'sub', text: ` ${GROUP[r.group]}` })),
+      departs, local, el('td', {}, chip, ' ', inText),
+      el('td', { class: 'c-bell' }, bell(`route:${r.id}`, `Alarm before ${r.from} to ${r.to} departs`)));
+    return { tr, update(now) {
+      const s = V.routeStatus(r, now), boarding = s.state === 'boarding';
+      chip.hidden = !boarding;
+      tr.classList.toggle('live', boarding);
+      setText(departs, vanaHM(s.departs));
+      setText(local, earth(s.departs, 'time'));
+      setText(inText, countdown(s.departs - now));
+    } };
+  }
+  function simpleGuildRow(g) {
+    const chip = el('span', { class: 'state' }), inText = el('span', { class: 'count' });
+    const tr = el('tr', {}, el('td', { text: g.craft }), el('td', { class: 'place', text: g.place }), el('td', { class: 'hide-sm' }, chip), el('td', {}, inText),
+      el('td', { class: 'c-bell' }, bell(`guild:${guildKey(g)}`, `Alarm before the ${shopName(g)} in ${g.place} opens`)));
+    return { tr, update(now) {
+      const s = V.guildStatus(g, now);
+      paintGuildChip(chip, s);
+      tr.classList.toggle('live', s.open);
+      // Phones hide the status column, so a holiday is named here too.
+      setText(inText, `${s.open ? 'closes' : s.holiday ? 'holiday, opens' : 'opens'} in ${countdown(s.until - now)}`);
+    } };
+  }
+  function renderSimple(now) {
+    // Soonest departure first; the order changes whenever one leaves.
+    liveRows($('s-routes'), `${gen}`, now, () => {
+      const list = V.ROUTES.map((r) => ({ r, departs: V.routeStatus(r, now).departs })).sort((a, b) => a.departs - b.departs);
+      return { rows: list.map(({ r }) => simpleRouteRow(r)), expires: list[0].departs + 1 };
+    });
+    liveRows($('s-guilds'), `${gen}`, now, () => ({ rows: V.GUILDS.map(simpleGuildRow) }));
+    const zones = settings.starredZones.filter((id) => ZONE_NAME.has(id)), today = V.clock(now).dayNumber;
+    liveRows($('s-days'), `${today}|${zones.join(',')}|${gen}`, now, () => {
+      $('s-days-head').replaceChildren(el('tr', {}, el('th', { text: "Vana'diel day" }), el('th', { class: 'hide-sm', text: 'Starts' }), el('th', { text: 'In' }),
+        el('th', { text: 'Moon' }), zones.map((id) => el('th', { text: ZONE_NAME.get(id) }))));
+      return { expires: V.dayStartOf(today + 1), rows: V.nextDays(now, 8).map((d) => {
+        const tr = el('tr'), when = spanCell(tr, d.start, d.end);
+        tr.append(el('td', {}, dayName(d.weekday)), el('td', { class: 'hide-sm', text: earthWhen(d.start, now) }), when.td,
+          el('td', { text: `${d.moon.percent}% ${V.MOON_PHASES[d.moon.phase]}` }),
+          ...zones.map((id) => { const w = V.weatherOf(id, d.dayNumber); return el('td', { title: `Usual ${V.WEATHERS[w.normal]}, common ${V.WEATHERS[w.common]}, rare ${V.WEATHERS[w.rare]}` }, weatherChip(w.normal)); }));
+        return { tr, update: when.update };
+      }) };
+    });
+    $('s-days-hint').hidden = zones.length > 0;
+  }
+
   // ---- Mini clock ----
   // Hours and minutes only: it runs on the 250 ms tick, which keeps going while the tab is hidden.
   let mini = null;
@@ -1031,7 +1165,9 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     $('hour-toggle').addEventListener('click', () => { settings.hour12 = !hour12(); persist(); paintToolbar(); });
     $('sound-toggle').addEventListener('click', () => { settings.sound = !settings.sound; persist(); paintToolbar(); unlockAudio(); if (settings.sound) chime(); });
     $('mini-button').addEventListener('click', openMini);
+    $('view-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-view]'); if (b) setView(b.dataset.view); });
     $('rse-details').addEventListener('click', () => {
+      showFull();
       settings.calTab = 'rse'; rseFocus = null; persist(); paintToolbar(); buildCalendarControls();
       $('calendar-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -1049,12 +1185,14 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
       if (e.ctrlKey || e.metaKey || e.altKey || (e.target instanceof Element && e.target.closest('input, select, textarea, dialog[open]'))) return;
       if (e.key === 't' || e.key === 'T') cycleTheme();
       else if (e.key === 'm' || e.key === 'M') openMini();
+      else if (e.key === 's' || e.key === 'S') setView(settings.view === 'simple' ? 'full' : 'simple');
       else if (e.key === '?') $('about-dialog').showModal();
     });
     document.addEventListener('visibilitychange', tick);
     wirePlanner();
     wireWeather();
     wireFinder();
+    wireTrips();
     wireConverter();
     wireDiscord();
     window.addEventListener('hashchange', () => openTarget(applyHash(location.hash)));
@@ -1062,6 +1200,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
   // After a shared link is applied: refresh the controls it touched and bring its panel into view.
   function openTarget(id) {
     if (!id) return;
+    showFull();
     buildPlanner();
     buildFinderChips();
     $('wx-zone').value = ZONE_NAME.get(settings.wxZone) || '';
@@ -1075,8 +1214,12 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     if (miniMode) { renderMini(now); return; }
     checkAlarms(now);
     if (!document.hidden) {
-      renderHero(now); renderStarredZones(now); renderRoutes(now); renderGuilds(now); renderWeather(now); renderFinder(now);
-      renderCalendar(now); renderConverter(now); renderPlanner(now); renderAlarms(now);
+      renderHero(now); renderStarredZones(now);
+      if (settings.view === 'simple') renderSimple(now);
+      else {
+        renderRoutes(now); renderTrips(now); renderGuilds(now); renderWeather(now); renderFinder(now);
+        renderCalendar(now); renderConverter(now); renderPlanner(now); renderAlarms(now);
+      }
     }
     if (mini) renderMini(now);
   }
@@ -1099,6 +1242,9 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     $('mini-root').hidden = false;
     mini = makeMini($('mini-root'));
   } else {
+    // ?simple opens the simple view and keeps it as the choice.
+    if (/[?&]simple\b/.test(location.search) && settings.view !== 'simple') { settings.view = 'simple'; persist(); }
+    applyView();
     const target = applyHash(location.hash);
     wire();
     paintToolbar();

@@ -333,6 +333,26 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-
 .mini-mode .app { display: none; }
 .mini-mode body, body.mini-body { min-height: 0; }
 
+/* ---- Simple view ----
+   The hero cards stay, smaller; the simple board replaces every panel. */
+.simple-board { display: none; }
+.simple-view .simple-board { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; align-items: start; }
+.simple-view .app > .panel { display: none; }
+.simple-board .s-days { grid-column: 1 / -1; }
+.simple-board .card { padding: 12px 14px; }
+.simple-board .table-wrap { margin-top: 6px; }
+.simple-view .vana-time { font-size: clamp(44px, 6vw, 64px); }
+.simple-view .element-row { margin: 8px 0 10px; }
+.simple-view .daybar { margin-bottom: 12px; }
+.simple-view .moon-svg { width: 60px; height: 60px; }
+.simple-view .moon-pct { font-size: 28px; }
+.grid.compact td { padding: 4px 6px; font-size: 12px; }
+.grid.compact th { padding: 4px 6px; }
+.star-mark { color: var(--gold); }
+.view-tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.grid.trips td { vertical-align: top; line-height: 1.55; }
+.grid.trips .route-name .sub { margin: 1px 0; }
+
 /* ---- Vana theme extras ---- */
 [data-theme="vana"] body {
   background:
@@ -370,6 +390,7 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-
 @media (max-width: 1080px) {
   .hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .clock-card { grid-column: 1 / -1; }
+  .simple-view .simple-board { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .hero { grid-template-columns: 1fr; }
@@ -377,6 +398,9 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-
   .grid .hide-sm { display: none; }
   .rse-cols { grid-template-columns: 1fr; }
   .grid td.place { white-space: normal; }
+  .simple-board .grid td.route-name, .zones-card .grid td.wx-line { white-space: normal; }
+  .simple-board .card { padding: 10px; }
+  .simple-board .grid.compact td, .simple-board .grid.compact th { padding: 4px 3px; }
   .grid td, .grid th { padding: 6px 5px; }
   .toolbar { justify-content: flex-start; }
 }

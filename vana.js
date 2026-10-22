@@ -196,6 +196,53 @@
     return out;
   }
 
+  // ---- Trips ----
+  // Runs chained port to port: each leg leaves the port the last one landed at, at least `transfer` ms
+  // after landing, for the walk between docks. Walking between towns and teleports are not part of
+  // it, and the Bibiki Bay tour comes back where it started, so it is left out.
+  const TRIP_ROUTES = ROUTES.filter((r) => !r.to.endsWith('(tour)'));
+  const PORTS = [...new Set(TRIP_ROUTES.flatMap((r) => [r.from, r.to]))];
+  // Ports a trip from `from` can reach, in PORTS order.
+  function portsFrom(from) {
+    const seen = new Set([from]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const r of TRIP_ROUTES) if (seen.has(r.from) && !seen.has(r.to)) { seen.add(r.to); grew = true; }
+    }
+    return PORTS.filter((p) => p !== from && seen.has(p));
+  }
+  // The trip that lands at `to` soonest for someone at `from` at time t. Every run keeps a timetable and
+  // none overtakes another, so the earliest landing at each port is also the best one to go on from;
+  // landings are improved port by port until nothing changes.
+  function earliestTrip(from, to, t, transfer = 60000) {
+    const best = new Map([[from, { lands: t, legs: [] }]]);
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const r of TRIP_ROUTES) {
+        const here = best.get(r.from);
+        if (!here || r.to === from) continue;
+        const departs = nextDeparture(r, here.legs.length ? here.lands + transfer : t), lands = departs + r.rideMs;
+        const there = best.get(r.to);
+        if (!there || lands < there.lands) { best.set(r.to, { lands, legs: [...here.legs, { route: r, departs, lands }] }); changed = true; }
+      }
+    }
+    const end = to === from ? null : best.get(to);
+    return end ? { departs: end.legs[0].departs, lands: end.lands, legs: end.legs } : null;
+  }
+  // The next `count` trips by departure. One that leaves earlier but lands no sooner than the next is
+  // dropped, since waiting for the later boat costs nothing.
+  function findTrips(from, to, t, count = 5, transfer = 60000) {
+    const out = [];
+    for (let start = t, guard = 0; out.length <= count && guard < count * 8; guard++) {
+      const trip = earliestTrip(from, to, start, transfer);
+      if (!trip) break;
+      while (out.length && out[out.length - 1].lands >= trip.lands) out.pop();
+      out.push(trip);
+      start = trip.departs;
+    }
+    return out.slice(0, count);
+  }
+
   // ---- Guild shops and other shops with hours ----
   // Hours are Vana'diel hours, open from `open` up to but not including `close`, and closed all day
   // on the holiday (a DAYS index). From LandSandBoat's guild shop data, which also gives hours to the
@@ -444,7 +491,7 @@
     ELEMENTS, DAYS, MOON_PHASES, FULL, NEW, RSE_RACES, RSE_PLACES, RSE_DUNGEONS, RSE_GEAR, RUNS, ROUTES, SHOPS, GUILDS,
     mod, clock, dayStartOf, fromVana, minuteOfDay, isDaytime, phaseOf, moonOfDay, moon, nextPhaseChange,
     rse, rseOfWeek, rseWeeks, nextJpMidnight, nextConquestTally,
-    routeStatus, nextDeparture, departureMinutes, guildStatus, nextGuildOpening,
+    routeStatus, nextDeparture, departureMinutes, PORTS, portsFrom, earliestTrip, findTrips, guildStatus, nextGuildOpening,
     WEATHERS, WEATHER_ELEMENT, isDoubleWeather, weatherIdsFor, useWeatherData, weatherOf, weatherZones,
     FOG, FOG_FROM, FOG_TO, isCity, hasMorningFog, weatherGroups, weatherTier, findWeather, weatherOdds,
     nextDays, hourSegments, findWindows, icsCalendar,

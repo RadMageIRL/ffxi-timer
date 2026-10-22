@@ -212,6 +212,52 @@ test('a departure lands one ride later', () => {
   assert.equal(r.rideMs, 944000);
 });
 
+// ---- Trips ----
+const TRIP_T = Date.UTC(2026, 9, 22, 11, 35, 34);
+const legIds = (trip) => trip.legs.map((l) => l.route.id);
+test('Port Bastok to Kazham changes airships in Port Jeuno, with time to change docks', () => {
+  const [trip] = V.findTrips('Port Bastok', 'Kazham', TRIP_T, 1, 60000);
+  assert.deepEqual(legIds(trip), ['bastok-jeuno', 'jeuno-kazham']);
+  const [a, b] = trip.legs;
+  assert.ok(b.departs >= a.lands + 60000, 'the second airship leaves at least a minute after the first lands');
+  assert.equal(b.departs, V.nextDeparture(ROUTE['jeuno-kazham'], a.lands + 60000), 'and it is the first one that does');
+  assert.deepEqual([trip.departs, trip.lands], [a.departs, b.lands]);
+});
+test('Selbina to Nashmau takes three boats through Mhaura and Whitegate', () => {
+  const [trip] = V.findTrips('Selbina', 'Nashmau', TRIP_T, 1);
+  assert.deepEqual(legIds(trip), ['selbina-mhaura', 'mhaura-whitegate', 'whitegate-nashmau']);
+});
+test('North Landing to South Landing goes by way of Central Landing', () => {
+  const [trip] = V.findTrips('North Landing', 'South Landing', TRIP_T, 1);
+  assert.deepEqual(legIds(trip), ['barge-north-central', 'barge-central-south-night']);
+});
+test('a direct run is one leg, and trips come in departure order', () => {
+  const trips = V.findTrips('Port Jeuno', "Port San d'Oria", TRIP_T, 4);
+  assert.equal(trips.length, 4);
+  assert.ok(trips.every((t) => legIds(t).join() === 'jeuno-sandoria'));
+  for (let i = 1; i < trips.length; i++) assert.equal(trips[i].departs - trips[i - 1].departs, ROUTE['jeuno-sandoria'].everyMs);
+});
+test('a boarding run counts: the trip leaves when its door shuts', () => {
+  const r = ROUTE['jeuno-kazham'], open = V.EPOCH + 1000 * V.DAY + r.openAt;
+  const [trip] = V.findTrips('Port Jeuno', 'Kazham', open + 1000, 1);
+  assert.equal(trip.departs, open + r.dockedMs);
+});
+test('no trip leaves earlier than another yet lands no sooner', () => {
+  for (const [from, to] of [['Port Bastok', 'Kazham'], ['Selbina', 'Nashmau'], ['Kazham', "Port San d'Oria"], ['Central Landing', 'North Landing']]) {
+    const trips = V.findTrips(from, to, TRIP_T, 6);
+    assert.equal(trips.length, 6, `${from} to ${to}`);
+    for (let i = 1; i < trips.length; i++) assert.ok(trips[i].departs > trips[i - 1].departs && trips[i].lands > trips[i - 1].lands, `${from} to ${to} #${i}`);
+  }
+});
+test('ports with no boat between them have no trip, and each network reaches only itself', () => {
+  assert.deepEqual(V.findTrips('Selbina', 'Port Jeuno', TRIP_T, 3), []);
+  assert.deepEqual(V.portsFrom('Selbina'), ['Mhaura', 'Aht Urhgan Whitegate', 'Nashmau']);
+  assert.deepEqual(V.portsFrom('Port Bastok'), ['Port Jeuno', "Port San d'Oria", 'Port Windurst', 'Kazham']);
+  assert.deepEqual(V.portsFrom('Bibiki Bay'), ['Purgonorgo Isle']);
+  assert.equal(V.PORTS.length, 14);
+  assert.ok(!V.PORTS.some((p) => p.includes('tour')));
+});
+
 // ---- Guilds ----
 const ALCHEMY = V.GUILDS.find((g) => g.craft === 'Alchemy' && g.place === 'Bastok Mines');
 test('the Bastok alchemy guild opens at 08:00 and is open until 23:00', () => {
