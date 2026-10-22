@@ -1,0 +1,283 @@
+// Tests for vana.js. Run with `node tests/run.mjs`; no dependencies.
+// Reference values come from sources independent of this code: the server's epoch, the anchors
+// in Pyogenes' timer, BG Wiki's moon table and the in-game ferry timekeeper schedules.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+const V = createRequire(import.meta.url)('../vana.js');
+let passed = 0, failed = 0;
+function test(name, fn) {
+  try { fn(); passed++; } catch (e) { failed++; console.error(`FAIL ${name}\n  ${e.message.split('\n').join('\n  ')}`); }
+}
+
+// Earth time of a Vana'diel day number (days since the epoch) at an hour and minute.
+const at = (dayNumber, hour = 0, minute = 0) => V.dayStartOf(dayNumber) + hour * V.HOUR + minute * V.MIN;
+const FIRESDAY = 240000; // a day number divisible by 8
+const ROUTE = Object.fromEntries(V.ROUTES.map((r) => [r.id, r]));
+
+// ---- Clock ----
+test('the epoch is 886-01-01 00:00:00, a Firesday', () => {
+  const c = V.clock(V.EPOCH);
+  assert.deepEqual([c.year, c.month, c.date, c.hour, c.minute, c.second, c.weekday], [886, 1, 1, 0, 0, 0, 0]);
+});
+test("Pyogenes' basis date 2002-06-23 15:00 UTC is 898-02-01 00:00", () => {
+  const c = V.clock(Date.UTC(2002, 5, 23, 15));
+  assert.deepEqual([c.year, c.month, c.date, c.hour, c.minute], [898, 2, 1, 0, 0]);
+});
+test('one Vana\'diel day is 57 minutes 36 seconds of Earth time', () => {
+  assert.equal(V.DAY, (57 * 60 + 36) * 1000);
+  assert.equal(V.clock(V.EPOCH + V.DAY).date, 2);
+  assert.equal(V.clock(V.EPOCH + V.DAY - 1).hour, 23);
+});
+test('a month is 30 days and a year 360', () => {
+  const c = V.clock(V.EPOCH + 30 * V.DAY), y = V.clock(V.EPOCH + 360 * V.DAY);
+  assert.deepEqual([c.month, c.date], [2, 1]);
+  assert.deepEqual([y.year, y.month, y.date], [887, 1, 1]);
+});
+test('the week runs Firesday through Darksday and wraps', () => {
+  assert.deepEqual([0, 1, 7, 8].map((d) => V.clock(at(FIRESDAY + d, 12)).weekday), [0, 1, 7, 0]);
+  assert.equal(V.DAYS[4].name, 'Iceday');
+});
+test('Watersday weakens Fire (the BG Wiki example)', () => {
+  assert.equal(V.DAYS[2].name, 'Watersday');
+  assert.equal(V.DAYS[2].weak, 'fire');
+});
+test('each day weakens a different element and never its own', () => {
+  assert.equal(new Set(V.DAYS.map((d) => d.weak)).size, 8);
+  for (const d of V.DAYS) assert.notEqual(d.weak, d.element, d.name);
+});
+test('daytime is 06:00 up to 18:00', () => {
+  assert.deepEqual([5, 6, 17, 18].map(V.isDaytime), [false, true, true, false]);
+});
+
+// ---- Moon ----
+const MOON_ANCHOR = Date.UTC(2004, 0, 25, 2, 31, 12); // Pyogenes' full moon reference
+const anchorDay = V.clock(MOON_ANCHOR).dayNumber;
+const moonAfter = (days) => V.moonOfDay(anchorDay + days);
+test("Pyogenes' moon reference day is the 100% full moon peak", () => {
+  assert.equal(V.clock(MOON_ANCHOR).hour, 0);
+  assert.deepEqual([moonAfter(0).percent, moonAfter(0).direction, moonAfter(0).phase], [100, 'peak', V.FULL]);
+});
+test('the moon reaches 0% (new moon peak) 42 days after the full peak and 100% again after 84', () => {
+  assert.deepEqual([moonAfter(42).percent, moonAfter(42).direction], [0, 'peak']);
+  assert.deepEqual([moonAfter(84).percent, moonAfter(84).direction], [100, 'peak']);
+});
+test('waning percentages match the BG Wiki ranges at their edges', () => {
+  // 93%-79% Waning Gibbous, 76%-62% Waning Gibbous, 60%-43% Last Quarter, 40%-26%, 24%-12% Waning Crescent, then 10% New
+  assert.deepEqual([3, 9, 10, 16, 17, 24, 25, 31, 32, 37, 38].map((d) => moonAfter(d).percent), [93, 79, 76, 62, 60, 43, 40, 26, 24, 12, 10]);
+});
+test('waxing percentages match the BG Wiki ranges at their edges', () => {
+  // 5% New, 7%-21%, 24%-38% Waxing Crescent, 40%-55% First Quarter, 57%-71%, 74%-88% Waxing Gibbous, 90% Full
+  assert.deepEqual([44, 45, 51, 52, 58, 59, 65, 66, 72, 73, 79, 80].map((d) => moonAfter(d).percent), [5, 7, 21, 24, 38, 40, 55, 57, 71, 74, 88, 90]);
+});
+test("the integer percent formula matches the server's floating point one on every day of the cycle", () => {
+  const server = (d) => Math.trunc(d >= 42 ? 100 * ((d - 42) / 42) + 0.5 : 100 * (1 - d / 42) + 0.5);
+  for (let d = 0; d < 84; d++) assert.equal(moonAfter(d).percent, server(d), `cycle day ${d}`);
+});
+test('43% waning is Last Quarter and 40% waning is a Waning Crescent', () => {
+  assert.equal(V.MOON_PHASES[moonAfter(24).phase], 'Last Quarter');
+  assert.equal(V.MOON_PHASES[moonAfter(25).phase], 'Waning Crescent');
+});
+test("38% waxing is still a Waxing Crescent (Pyogenes' moon display calls it First Quarter)", () => {
+  assert.equal(moonAfter(58).percent, 38);
+  assert.equal(V.MOON_PHASES[moonAfter(58).phase], 'Waxing Crescent');
+  assert.equal(V.MOON_PHASES[moonAfter(59).phase], 'First Quarter');
+});
+test('every phase name lasts as many days as the BG Wiki percentages give it', () => {
+  const days = {};
+  for (let d = 0; d < 84; d++) { const n = V.MOON_PHASES[moonAfter(d).phase]; days[n] = (days[n] || 0) + 1; }
+  assert.deepEqual(days, {
+    'Full Moon': 7, 'Waning Gibbous': 14, 'Last Quarter': 8, 'Waning Crescent': 13,
+    'New Moon': 7, 'Waxing Crescent': 14, 'First Quarter': 7, 'Waxing Gibbous': 14,
+  });
+});
+test('the full moon runs from 90% waxing to 95% waning', () => {
+  assert.deepEqual([79, 80, 83, 86, 87].map((d) => V.MOON_PHASES[moonAfter(d).phase]), ['Waxing Gibbous', 'Full Moon', 'Full Moon', 'Full Moon', 'Waning Gibbous']);
+});
+test('the new moon runs from 10% waning to 5% waxing', () => {
+  assert.deepEqual([37, 38, 44, 45].map((d) => V.MOON_PHASES[moonAfter(d).phase]), ['Waning Crescent', 'New Moon', 'New Moon', 'Waxing Crescent']);
+});
+test('the next phase change from the full peak is the Waning Gibbous, three days on', () => {
+  const next = V.nextPhaseChange(V.dayStartOf(anchorDay) + 5 * V.HOUR);
+  assert.equal(next.at, V.dayStartOf(anchorDay + 3));
+  assert.equal(V.MOON_PHASES[next.phase], 'Waning Gibbous');
+});
+
+// ---- RSE ----
+const RSE_ANCHOR = Date.UTC(2004, 0, 28, 9, 14, 24); // Pyogenes' RSE reference week start
+test("Pyogenes' RSE reference is a week start with Male Hume in Gusgen Mines", () => {
+  const r = V.rse(RSE_ANCHOR);
+  assert.equal(r.start, RSE_ANCHOR);
+  assert.equal(V.RSE_RACES[r.race], 'Male Hume');
+  assert.equal(V.RSE_PLACES[r.place], 'Gusgen Mines');
+});
+test('the week after is Female Hume in the Maze of Shakhrami, then Male Elvaan in Ordelle\'s Caves', () => {
+  const [, a, b] = V.rseWeeks(RSE_ANCHOR, 3);
+  assert.deepEqual([V.RSE_RACES[a.race], V.RSE_PLACES[a.place]], ['Female Hume', 'Maze of Shakhrami']);
+  assert.deepEqual([V.RSE_RACES[b.race], V.RSE_PLACES[b.place]], ['Male Elvaan', "Ordelle's Caves"]);
+});
+test('filtering RSE weeks by race returns that race every 8 weeks', () => {
+  const weeks = V.rseWeeks(RSE_ANCHOR, 3, 7);
+  assert.ok(weeks.every((w) => w.race === 7));
+  assert.deepEqual([weeks[1].start - weeks[0].start, weeks[2].start - weeks[1].start], [8 * V.WEEK, 8 * V.WEEK]);
+});
+
+test('each RSE dungeon has its own chest key and the sachet NM its ??? pops', () => {
+  assert.equal(V.RSE_DUNGEONS.length, V.RSE_PLACES.length);
+  assert.deepEqual(V.RSE_DUNGEONS.map((d) => d.key), ['Ordelle Chest Key', 'Gusgen Chest Key', 'Shakhrami Chest Key']);
+  assert.deepEqual(V.RSE_DUNGEONS.map((d) => d.nm), ['Aroma Leech', 'Aroma Fly', 'Aroma Crawler']);
+  for (const d of V.RSE_DUNGEONS) {
+    assert.ok(d.droppers.length >= 10, d.key);
+    assert.equal(new Set(d.droppers.map(([n]) => n)).size, d.droppers.length, `${d.key} lists a monster twice`);
+    assert.ok(d.droppers.every(([, r]) => r === 'rare' || r === 'very rare'), d.key);
+  }
+});
+test('every race has a four-piece set and a sachet, and both Tarutaru share theirs', () => {
+  assert.equal(V.RSE_GEAR.length, V.RSE_RACES.length);
+  for (const g of V.RSE_GEAR) assert.ok(g.pieces.length === 4 && g.pieces.every((p) => p.startsWith(g.set)) && g.sachet.endsWith('Sachet'), g.set);
+  assert.deepEqual(V.RSE_GEAR[4], V.RSE_GEAR[5]);
+  assert.equal(new Set(V.RSE_GEAR.map((g) => g.sachet)).size, 7);
+});
+
+// ---- Earth resets ----
+test('JP midnight from 12:00 UTC is 15:00 UTC the same day', () => {
+  assert.equal(V.nextJpMidnight(Date.UTC(2026, 9, 21, 12)), Date.UTC(2026, 9, 21, 15));
+});
+test('JP midnight at exactly 15:00 UTC is the next day', () => {
+  assert.equal(V.nextJpMidnight(Date.UTC(2026, 9, 21, 15)), Date.UTC(2026, 9, 22, 15));
+});
+test('the conquest tally after Wednesday 2026-10-21 is Monday 00:00 JST, Sunday 15:00 UTC', () => {
+  const next = V.nextConquestTally(Date.UTC(2026, 9, 21, 12));
+  assert.equal(next, Date.UTC(2026, 9, 25, 15));
+  assert.equal(new Date(next + V.JST).getUTCDay(), 1);
+});
+test('the conquest tally one millisecond early is still that tally, and at it the next week', () => {
+  assert.equal(V.nextConquestTally(Date.UTC(2026, 9, 25, 15) - 1), Date.UTC(2026, 9, 25, 15));
+  assert.equal(V.nextConquestTally(Date.UTC(2026, 9, 25, 15)), Date.UTC(2026, 10, 1, 15));
+});
+
+// ---- Ships ----
+const doorMinute = (r) => Math.floor(r.openAt / V.MIN) % (r.everyMs / V.MIN);
+test('the Selbina and Mhaura boats dock at 06:40 and leave at 00:00, 08:00 and 16:00 (timekeeper schedule)', () => {
+  for (const id of ['selbina-mhaura', 'mhaura-selbina']) {
+    assert.equal(doorMinute(ROUTE[id]), 6 * 60 + 40, id);
+    assert.deepEqual(V.departureMinutes(ROUTE[id]), [0, 480, 960], id);
+  }
+});
+test('the Mhaura and Whitegate boats dock at 02:40 and leave at 04:00, 12:00 and 20:00', () => {
+  for (const id of ['mhaura-whitegate', 'whitegate-mhaura']) {
+    assert.equal(doorMinute(ROUTE[id]), 2 * 60 + 40, id);
+    assert.deepEqual(V.departureMinutes(ROUTE[id]), [240, 720, 1200], id);
+  }
+});
+test('the Whitegate and Nashmau boats dock at 05:00 and leave at 00:00, 08:00 and 16:00', () => {
+  for (const id of ['whitegate-nashmau', 'nashmau-whitegate']) {
+    assert.equal(doorMinute(ROUTE[id]), 5 * 60, id);
+    assert.deepEqual(V.departureMinutes(ROUTE[id]), [0, 480, 960], id);
+  }
+});
+test('airships leave four times a Vana\'diel day, within six minutes after the times older timers list', () => {
+  const listed = { 'jeuno-sandoria': 70, 'jeuno-windurst': 160, 'jeuno-bastok': 250, 'jeuno-kazham': 335, 'bastok-jeuno': 70, 'kazham-jeuno': 160, 'sandoria-jeuno': 250, 'windurst-jeuno': 345 };
+  for (const [id, minute] of Object.entries(listed)) {
+    const deps = V.departureMinutes(ROUTE[id]);
+    assert.equal(deps.length, 4, id);
+    assert.ok(deps[0] >= minute && deps[0] <= minute + 6, `${id} leaves at minute ${deps[0]}, listed ${minute}`);
+  }
+});
+test('every ship, airship and Manaclipper lands while a vessel is arriving at its destination berth', () => {
+  for (const r of V.ROUTES.filter((x) => x.group !== 'barge')) {
+    const dest = r.to.replace(' (tour)', ''), land = V.mod(r.offset * 1000 + r.disembark * 1000, r.everyMs);
+    const berths = V.ROUTES.filter((x) => x.from === dest && x.everyMs === r.everyMs);
+    assert.ok(berths.some((b) => V.mod(land - b.arriveAt, r.everyMs) < b.arrivingMs), `${r.id} lands at ${land / 1000}s with no arrival under way`);
+  }
+});
+test('each barge leg lands before the next leg leaves that landing', () => {
+  for (const r of V.ROUTES.filter((x) => x.group === 'barge')) {
+    const lands = V.routeStatus(r, V.EPOCH).lands;
+    const after = V.ROUTES.filter((x) => x.group === 'barge' && x.from === r.to).map((x) => V.nextDeparture(x, lands));
+    assert.ok(after.length && Math.min(...after) - lands < V.DAY / 2, r.id);
+  }
+});
+test('a route is boarding from the moment its door opens until it shuts', () => {
+  const r = ROUTE['jeuno-kazham'], open = V.EPOCH + 1000 * V.DAY + r.openAt, shut = open + r.dockedMs;
+  assert.equal(V.routeStatus(r, open - 1).state, 'arriving');
+  assert.deepEqual([V.routeStatus(r, open).state, V.routeStatus(r, open).departs], ['boarding', shut]);
+  assert.deepEqual([V.routeStatus(r, shut - 1).state, V.routeStatus(r, shut - 1).departs], ['boarding', shut]);
+  assert.deepEqual([V.routeStatus(r, shut).state, V.routeStatus(r, shut).departs], ['away', shut + r.everyMs]);
+});
+test('a departure lands one ride later', () => {
+  const r = ROUTE['selbina-mhaura'], s = V.routeStatus(r, V.EPOCH + 5 * V.HOUR);
+  assert.equal(s.lands - s.departs, r.rideMs);
+  assert.equal(r.rideMs, 944000);
+});
+
+// ---- Guilds ----
+const ALCHEMY = V.GUILDS.find((g) => g.craft === 'Alchemy' && g.place === 'Bastok Mines');
+test('the Bastok alchemy guild opens at 08:00 and is open until 23:00', () => {
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY, 7, 59)), { open: false, holiday: false, until: at(FIRESDAY, 8) });
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY, 8)), { open: true, holiday: false, until: at(FIRESDAY, 23) });
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY, 22, 59)), { open: true, holiday: false, until: at(FIRESDAY, 23) });
+});
+test('the Bastok alchemy guild closed at 23:00 reopens the next morning', () => {
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY, 23)), { open: false, holiday: false, until: at(FIRESDAY + 1, 8) });
+});
+test('the Bastok alchemy guild is closed all Lightsday and reopens Darksday at 08:00', () => {
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 6, 12)), { open: false, holiday: true, until: at(FIRESDAY + 7, 8) });
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 5, 23)), { open: false, holiday: false, until: at(FIRESDAY + 7, 8) });
+});
+test('the next opening of an open guild is the following morning', () => {
+  assert.equal(V.nextGuildOpening(ALCHEMY, at(FIRESDAY, 9)), at(FIRESDAY + 1, 8));
+});
+test('every guild has hours inside one day and a real holiday', () => {
+  for (const g of V.GUILDS) assert.ok(g.open < g.close && g.close <= 24 && g.holiday >= 0 && g.holiday < 8, `${g.craft} ${g.place}`);
+});
+
+// ---- Calendars and planner ----
+test('nextDays filtered to Darksday returns consecutive Darksdays a week apart', () => {
+  const days = V.nextDays(at(FIRESDAY, 3), 3, 7);
+  assert.deepEqual(days.map((d) => d.dayNumber), [FIRESDAY + 7, FIRESDAY + 15, FIRESDAY + 23]);
+});
+test('Darksday under a new moon finds whole-day windows that satisfy both', () => {
+  const wins = V.findWindows(at(FIRESDAY, 3), { weekdays: [7], phases: [V.NEW] }, 3);
+  assert.equal(wins.length, 3);
+  for (const w of wins) {
+    const c = V.clock(w.start), m = V.moon(w.start);
+    assert.deepEqual([c.weekday, c.hour, m.phase, w.end - w.start], [7, 0, V.NEW, V.DAY]);
+  }
+  assert.ok(wins[0].start < wins[1].start && wins[1].start < wins[2].start);
+});
+test('an hour range that wraps midnight gives one window from 20:00 to 04:00', () => {
+  const [w] = V.findWindows(at(FIRESDAY, 22), { from: 20, to: 4 }, 1);
+  assert.deepEqual([w.start, w.end], [at(FIRESDAY, 20), at(FIRESDAY + 1, 4)]);
+});
+test('a window that began yesterday and is still open is reported from its real start', () => {
+  const [w] = V.findWindows(at(FIRESDAY, 2), { from: 20, to: 4 }, 1);
+  assert.deepEqual([w.start, w.end], [at(FIRESDAY - 1, 20), at(FIRESDAY, 4)]);
+});
+test('a full moon already under way is reported from its first day at 90% waxing', () => {
+  const [w] = V.findWindows(V.dayStartOf(anchorDay + 1) + 5 * V.HOUR, { phases: [V.FULL] }, 1);
+  assert.deepEqual([w.start, w.end], [V.dayStartOf(anchorDay - 4), V.dayStartOf(anchorDay + 3)]);
+  assert.deepEqual([V.moon(w.start).percent, V.moon(w.start).direction], [90, 'waxing']);
+});
+test('a moon percent range keeps only days inside it', () => {
+  const wins = V.findWindows(at(FIRESDAY), { minPercent: 95 }, 4);
+  for (const w of wins) for (let t = w.start; t < w.end; t += V.DAY) assert.ok(V.moon(t).percent >= 95);
+});
+
+// ---- User-facing copy agrees with the data ----
+const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const count = (group) => V.ROUTES.filter((r) => r.group === group).length;
+test('the About dialog counts match the route and guild data', () => {
+  assert.match(html, new RegExp(`All ${count('airship')} airships`));
+  assert.match(html, new RegExp(`the ${count('ferry')} Selbina, Mhaura, Whitegate and Nashmau boats`));
+  assert.match(html, new RegExp(`${V.GUILDS.length} guild shops`));
+});
+test('the About dialog example departure is what the data gives', () => {
+  const [first] = V.departureMinutes(ROUTE['jeuno-sandoria']);
+  assert.equal(`${String(Math.floor(first / 60)).padStart(2, '0')}:${String(first % 60).padStart(2, '0')}`, '01:14');
+  assert.match(html, /shows 01:14 rather than 01:10/);
+});
+
+console.log(`${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

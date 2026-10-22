@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script>
+    // Apply a stored theme before first paint so a light/dark/vana choice doesn't flash the system
+    // theme while app.js loads. No attribute means "system" (follow prefers-color-scheme).
+    (function () {
+      try {
+        var t = localStorage.getItem('ffxi_timer_theme');
+        if (t === 'light' || t === 'dark' || t === 'vana') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+      if (/[?&]mini\b/.test(location.search)) document.documentElement.classList.add('mini-mode');
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
+  <title>FFXI Timer v0.1 - Vana'diel clock, ships and guilds</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app" id="app">
+    <header class="topbar">
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.1 · vana'diel clock · ships · guilds · alarms</span></div>
+      <nav class="toolbar" aria-label="Controls">
+        <button class="button" id="hour-toggle" type="button" title="Earth times in 12 or 24 hour format">12h</button>
+        <button class="button" id="sound-toggle" type="button" title="Play a chime when an alarm fires">Sound: on</button>
+        <button class="button" id="mini-button" type="button" title="Open a small always-on-top clock window">Mini clock</button>
+        <button class="button" id="theme-toggle" type="button" aria-label="Switch color theme">Theme</button>
+        <button class="button" id="about-button" type="button">About</button>
+      </nav>
+    </header>
+
+    <section class="hero" aria-label="Vana'diel now">
+      <div class="card clock-card">
+        <div class="card-label">Vana'diel time</div>
+        <div class="vana-time"><span id="v-time">--:--</span><span class="v-sec" id="v-sec">:--</span></div>
+        <div class="vana-date"><span id="v-day" class="day-name">-</span><span id="v-date" class="muted"></span></div>
+        <div class="element-row" id="v-elements"></div>
+        <div class="daybar" aria-hidden="true">
+          <div class="daybar-track"></div>
+          <div class="daybar-marker" id="v-marker"></div>
+          <div class="daybar-ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+        </div>
+        <dl class="facts">
+          <div><dt>Next day</dt><dd id="v-nextday">-</dd></div>
+          <div><dt>Time of day</dt><dd id="v-tod">-</dd></div>
+          <div><dt>Local</dt><dd id="e-local">-</dd></div>
+          <div><dt>Japan</dt><dd id="e-jst">-</dd></div>
+        </dl>
+      </div>
+
+      <div class="card moon-card">
+        <div class="card-label">Moon</div>
+        <div class="moon-head">
+          <svg class="moon-svg" id="moon-svg" viewBox="0 0 64 64" aria-hidden="true">
+            <circle class="moon-dark" cx="32" cy="32" r="28"></circle>
+            <path class="moon-lit" id="moon-lit" d=""></path>
+            <circle class="moon-rim" cx="32" cy="32" r="28"></circle>
+          </svg>
+          <div>
+            <div class="moon-pct" id="moon-pct">--%</div>
+            <div class="moon-name" id="moon-name">-</div>
+          </div>
+        </div>
+        <dl class="facts one-col">
+          <div><dt id="moon-next-label">Next phase</dt><dd id="moon-next">-</dd></div>
+          <div><dt>Full moon</dt><dd><span id="moon-full">-</span><button class="bell" type="button" data-alarm="moon:4" aria-label="Alarm when the full moon begins"></button></dd></div>
+          <div><dt>New moon</dt><dd><span id="moon-new">-</span><button class="bell" type="button" data-alarm="moon:0" aria-label="Alarm when the new moon begins"></button></dd></div>
+        </dl>
+      </div>
+
+      <div class="card resets-card">
+        <div class="card-label">Resets and rotations</div>
+        <dl class="facts one-col">
+          <div><dt>JP midnight</dt><dd><span id="r-jp">-</span><button class="bell" type="button" data-alarm="jp:" aria-label="Alarm before JP midnight"></button></dd></div>
+          <div><dt>Conquest tally</dt><dd><span id="r-conquest">-</span><button class="bell" type="button" data-alarm="conquest:" aria-label="Alarm before the conquest tally"></button></dd></div>
+          <div><dt>RSE this week</dt><dd><span id="r-rse">-</span><button class="link-btn" id="rse-details" type="button">details</button></dd></div>
+          <div><dt>RSE changes</dt><dd id="r-rse-next">-</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="panel" id="transport-panel" aria-labelledby="transport-title">
+      <div class="panel-head">
+        <h2 id="transport-title">Ships and airships</h2>
+        <div class="tabs" role="tablist" aria-label="Transport group" id="route-tabs">
+          <button type="button" data-tab="airship">Airships</button>
+          <button type="button" data-tab="ferry">Ferries</button>
+          <button type="button" data-tab="manaclipper">Manaclipper</button>
+          <button type="button" data-tab="barge">Barge</button>
+          <button type="button" data-tab="starred">Starred</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="grid routes">
+          <thead><tr><th class="c-star"><span class="sr-only">Star</span></th><th>Route</th><th class="hide-sm">Status</th><th>Departs</th><th class="hide-sm">Local</th><th>In</th><th class="hide-sm">Lands</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
+          <tbody id="routes"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="route-hint">Times are the moment the door shuts. Vana'diel times are on the left, your local Earth time beside them.</p>
+    </section>
+
+    <section class="panel" id="guild-panel" aria-labelledby="guild-title">
+      <div class="panel-head">
+        <h2 id="guild-title">Guilds</h2>
+        <div class="chips" id="guild-filter"></div>
+      </div>
+      <div class="table-wrap">
+        <table class="grid guilds">
+          <thead><tr><th>Craft</th><th>Place</th><th class="hide-sm">Hours</th><th class="hide-sm">Holiday</th><th>Status</th><th>Changes in</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
+          <tbody id="guilds"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="calendar-panel" aria-labelledby="calendar-title">
+      <div class="panel-head">
+        <h2 id="calendar-title">Calendars</h2>
+        <div class="tabs" role="tablist" aria-label="Calendar" id="cal-tabs">
+          <button type="button" data-tab="days">Days</button>
+          <button type="button" data-tab="moon">Moon</button>
+          <button type="button" data-tab="rse">RSE</button>
+        </div>
+      </div>
+      <div class="controls" id="cal-controls"></div>
+      <div class="table-wrap">
+        <table class="grid calendar">
+          <thead id="cal-head"></thead>
+          <tbody id="cal-body"></tbody>
+        </table>
+      </div>
+      <div class="rse-detail" id="rse-detail" hidden></div>
+    </section>
+
+    <section class="panel" id="planner-panel" aria-labelledby="planner-title">
+      <div class="panel-head">
+        <h2 id="planner-title">Planner</h2>
+        <div class="chips" id="planner-presets"></div>
+      </div>
+      <p class="hint">Pick the Vana'diel conditions you need and see when they next line up in Earth time. Every condition has to hold; leave a row empty to allow anything. An hour range wraps past midnight when the start is later than the end.</p>
+      <div class="planner-grid">
+        <div class="option-group"><span class="option-label">Day</span><div class="chips" id="pl-days"></div></div>
+        <div class="option-group"><span class="option-label">Moon</span><div class="chips" id="pl-phases"></div></div>
+        <div class="option-group">
+          <span class="option-label">Hours</span>
+          <select class="select" id="pl-from" aria-label="From Vana'diel hour"></select>
+          <span class="muted">to</span>
+          <select class="select" id="pl-to" aria-label="To Vana'diel hour"></select>
+          <span class="option-label pad-left">Moon %</span>
+          <input class="num" id="pl-min" type="number" min="0" max="100" step="1" aria-label="Minimum moon percent">
+          <span class="muted">to</span>
+          <input class="num" id="pl-max" type="number" min="0" max="100" step="1" aria-label="Maximum moon percent">
+          <button class="button small" id="pl-clear" type="button">Clear</button>
+          <button class="bell labeled" type="button" data-alarm="planner:" id="pl-alarm" aria-label="Alarm when the next window opens"><span>Alarm</span></button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="grid planner">
+          <thead><tr><th>Starts</th><th class="hide-sm">Ends</th><th class="hide-sm">Length</th><th>In</th><th>In Vana'diel</th></tr></thead>
+          <tbody id="pl-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="alarm-panel" aria-labelledby="alarm-title">
+      <div class="panel-head">
+        <h2 id="alarm-title">Alarms</h2>
+        <div class="option-group">
+          <span class="option-label">New alarms</span>
+          <select class="select" id="lead-default" aria-label="Minutes of warning for new alarms"></select>
+          <button class="button small" id="notify-button" type="button">Enable notifications</button>
+          <button class="button small" id="test-alarm" type="button">Test</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="grid alarms">
+          <thead><tr><th>Alarm</th><th>Warning</th><th>Next</th><th>In</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody id="alarms"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="alarm-hint">Use a bell anywhere on the page to add an alarm. They live in this browser and only fire while this page is open; a minimized tab can fire a few seconds late.</p>
+    </section>
+
+    <footer class="footer">
+      Schedules from <a href="https://github.com/LandSandBoat/server" rel="noopener">LandSandBoat</a>'s retail captures and guild data ·
+      inspired by Pyogenes' <a href="https://www.pyogenes.com/ffxi/timer/v2.html" rel="noopener">FFXI Time Information</a> ·
+      FINAL FANTASY is a registered trademark of Square Enix; this page is not affiliated with it.
+    </footer>
+  </main>
+
+  <div class="mini" id="mini-root" hidden></div>
+
+  <dialog class="about" id="about-dialog" aria-labelledby="about-title">
+    <form method="dialog" class="about-body">
+      <h2 id="about-title">ffxi-timer v0.1</h2>
+      <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from the Earth clock; nothing is fetched and nothing leaves the browser.</p>
+      <h3>What it shows</h3>
+      <ul>
+        <li>Vana'diel time and date, the weekday's strong and weak elements, day or night, and the next day change</li>
+        <li>Moon percent and phase, with the next phase change, full moon and new moon</li>
+        <li>JP midnight, the weekly conquest tally (Monday 00:00 JST) and this week's RSE race and dungeon</li>
+        <li>All 8 airships, the 6 Selbina, Mhaura, Whitegate and Nashmau boats, the Manaclipper and the Phanauet barge: boarding status, departure in Vana'diel and local time, countdown and landing time</li>
+        <li>22 guild shops with hours, holidays and open or closed status</li>
+        <li>Day, moon and RSE calendars, and a planner that finds when weekday, hour and moon conditions next line up</li>
+        <li>RSE details for any week: the chest key to trade, every monster that drops it, your race's set pieces and the sachet NM</li>
+        <li>Alarms with browser notifications and a chime, and a mini clock that stays on top of the game window (Chrome and Edge)</li>
+      </ul>
+      <h3>Accuracy</h3>
+      <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours and the RSE quest steps come from LandSandBoat's data and scripts.</p>
+      <h3>Shortcuts</h3>
+      <p><kbd>T</kbd> theme · <kbd>M</kbd> mini clock · <kbd>?</kbd> this dialog</p>
+      <div class="about-actions"><button class="button" value="close">Close</button></div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="vana.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
