@@ -16,13 +16,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
-  <title>FFXI Timer v0.2 - Vana'diel clock, ships and guilds</title>
+  <title>FFXI Timer v0.3 - Vana'diel clock, ships and guilds</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app" id="app">
     <header class="topbar">
-      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.2 · vana'diel clock · ships · guilds · alarms</span></div>
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.3 · vana'diel clock · ships · guilds · alarms</span></div>
       <nav class="toolbar" aria-label="Controls">
         <button class="button" id="hour-toggle" type="button" title="Earth times in 12 or 24 hour format">12h</button>
         <button class="button" id="sound-toggle" type="button" title="Play a chime when an alarm fires">Sound: on</button>
@@ -134,6 +134,34 @@
       <datalist id="zone-list"></datalist>
     </section>
 
+    <section class="panel" id="finder-panel" aria-labelledby="finder-title">
+      <div class="panel-head">
+        <h2 id="finder-title">Weather finder</h2>
+        <div class="option-group">
+          <span class="option-label">Search the next</span>
+          <select class="select" id="wf-days" aria-label="Vana'diel days to search"></select>
+          <button class="button small" id="wf-share" type="button" title="Copy a link that opens the finder with these weathers">Copy link</button>
+        </div>
+      </div>
+      <p class="hint">Click any weather on the page, or pick some here, to see which zones are most likely to have it and when. A weather in a day's usual slot beats the common slot, and common beats rare. Zones that always share their weather are listed together; click a zone for its forecast.</p>
+      <div class="chips" id="wf-chips"></div>
+      <h3 class="sub-head">Soonest chances</h3>
+      <div class="table-wrap">
+        <table class="grid finder">
+          <thead><tr><th>Zones</th><th>Chance</th><th>When</th><th class="hide-sm">Starts</th><th>In</th></tr></thead>
+          <tbody id="wf-soon"></tbody>
+        </table>
+      </div>
+      <h3 class="sub-head">Where it is most common</h3>
+      <p class="hint">Days of the 2,160-day cycle on which it is the usual, common or rare weather. Zones are ranked by LandSandBoat's estimate of how often each slot shows: the usual about half the time, the common about a third, the rare about one time in seven.</p>
+      <div class="table-wrap">
+        <table class="grid odds">
+          <thead><tr><th>Zones</th><th>Usual</th><th>Common</th><th>Rare</th></tr></thead>
+          <tbody id="wf-odds"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel" id="calendar-panel" aria-labelledby="calendar-title">
       <div class="panel-head">
         <h2 id="calendar-title">Calendars</h2>
@@ -231,7 +259,7 @@
 
   <dialog class="about" id="about-dialog" aria-labelledby="about-title">
     <form method="dialog" class="about-body">
-      <h2 id="about-title">ffxi-timer v0.2</h2>
+      <h2 id="about-title">ffxi-timer v0.3</h2>
       <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from the Earth clock; nothing is fetched and nothing leaves the browser.</p>
       <h3>What it shows</h3>
       <ul>
@@ -242,8 +270,9 @@
         <li>22 guild shops and 10 other shops with set hours (Tenshodo, linkshells, chips, ferry fishing), with each NPC, holiday, open or closed status and the next open stretch in local time</li>
         <li>Day, moon and RSE calendars, and a planner that finds when weekday, hour and moon conditions next line up</li>
         <li>RSE details for any week: the chest key to trade, every monster that drops it, your race's set pieces and the sachet NM</li>
-        <li>A weather forecast for 189 zones, and weather as a planner condition</li>
-        <li>Copy link buttons that share a planner search or a zone's forecast</li>
+        <li>A weather forecast for 218 zones, and weather as a planner condition</li>
+        <li>A weather finder: click any weather to see which zones are most likely to have it and when</li>
+        <li>Copy link buttons that share a planner search, a zone's forecast or a weather finder search</li>
         <li>Alarms with browser notifications, a chime and optional Discord posts, and a mini clock that stays on top of the game window (Chrome and Edge)</li>
       </ul>
       <h3>Accuracy</h3>

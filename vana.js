@@ -262,22 +262,81 @@
   // the server rolls among them every few minutes (normal most often, rare least), so a day can
   // be forecast as likely and possible weathers, never as one certain weather. The tables come
   // from weather-data.js, which the page loads beside this file and the tests pass in.
-  let weatherData = null, weatherIndex = null;
+  // Zones whose weather never changes (Dynamis, Temenos, the cloisters) come as `fixed`.
+  let weatherData = null, weatherIndex = null, weatherGroupList = null;
   function useWeatherData(data) {
     weatherData = data;
-    weatherIndex = new Map(data.zones.map((z) => [z[0], z]));
+    weatherIndex = new Map([
+      ...data.zones.map(([id, name, pattern]) => [id, { id, name, pattern }]),
+      ...(data.fixed || []).map(([id, name, packed]) => [id, { id, name, packed, fixed: true }]),
+    ]);
+    weatherGroupList = null;
   }
+  const loadWeather = () => { if (!weatherIndex && root.VanaWeatherData) useWeatherData(root.VanaWeatherData); return !!weatherIndex; };
+  const unpack = (v) => ({ normal: v >> 10, common: (v >> 5) & 31, rare: v & 31 });
   function weatherOf(zoneId, dayNumber) {
-    if (!weatherIndex && root.VanaWeatherData) useWeatherData(root.VanaWeatherData);
-    const z = weatherIndex && weatherIndex.get(zoneId);
+    const z = loadWeather() && weatherIndex.get(zoneId);
     if (!z) return null;
-    const [palette, days] = weatherData.patterns[z[2]];
-    const v = palette[weatherData.alphabet.indexOf(days[mod(dayNumber, weatherData.cycle)])];
-    return { normal: v >> 10, common: (v >> 5) & 31, rare: v & 31 };
+    if (z.fixed) return unpack(z.packed);
+    const [palette, days] = weatherData.patterns[z.pattern];
+    return unpack(palette[weatherData.alphabet.indexOf(days[mod(dayNumber, weatherData.cycle)])]);
   }
   function weatherZones() {
-    if (!weatherIndex && root.VanaWeatherData) useWeatherData(root.VanaWeatherData);
-    return weatherData ? weatherData.zones.map(([id, name]) => ({ id, name })) : [];
+    return loadWeather() ? [...weatherIndex.values()].map(({ id, name, fixed }) => ({ id, name, fixed: !!fixed })).sort((a, b) => a.name.localeCompare(b.name)) : [];
+  }
+  // Zones that share a pattern, or the same fixed weather, always have the same weather: one group.
+  function weatherGroups() {
+    if (!loadWeather()) return [];
+    if (!weatherGroupList) {
+      const groups = new Map();
+      for (const z of weatherZones()) {
+        const full = weatherIndex.get(z.id), key = full.fixed ? `f${full.packed}` : `p${full.pattern}`;
+        if (!groups.has(key)) groups.set(key, { key, fixed: z.fixed, zones: [] });
+        groups.get(key).zones.push({ id: z.id, name: z.name });
+      }
+      weatherGroupList = [...groups.values()];
+    }
+    return weatherGroupList;
+  }
+
+  // The best slot any of `ids` takes on a day: 0 usual, 1 common, 2 rare, -1 not that day.
+  const weatherTier = (w, ids) => (ids.includes(w.normal) ? 0 : ids.includes(w.common) ? 1 : ids.includes(w.rare) ? 2 : -1);
+  // How often the server shows each slot, by LandSandBoat's estimate. Used only to rank zones.
+  const TIER_SHARE = [0.5, 0.35, 0.15];
+
+  // Every stretch in the next `days` Vana'diel days when one of the weathers can happen, per zone
+  // group, best slot first and soonest first within it. A fixed zone is one entry marked `always`.
+  function findWeather(t, ids, days = 16) {
+    const today = clock(t).dayNumber, out = [];
+    for (const g of weatherGroups()) {
+      if (g.fixed) {
+        const w = weatherOf(g.zones[0].id, today);
+        if (weatherTier(w, ids) >= 0) out.push({ group: g, tier: 0, weather: w.normal, always: true, start: t, end: Infinity });
+        continue;
+      }
+      let run = null;
+      for (let n = today; n <= today + days; n++) {
+        const w = n < today + days ? weatherOf(g.zones[0].id, n) : null, tier = w ? weatherTier(w, ids) : -1;
+        if (run && run.tier === tier) { run.end = dayStartOf(n + 1); continue; }
+        if (run) out.push(run);
+        run = tier >= 0 ? { group: g, tier, weather: [w.normal, w.common, w.rare][tier], always: false, start: dayStartOf(n), end: dayStartOf(n + 1) } : null;
+      }
+    }
+    return out.sort((a, b) => a.tier - b.tier || b.always - a.always || a.start - b.start);
+  }
+  // For each zone group, how many days of the 2,160-day cycle the weathers are usual, common or rare,
+  // ranked by how much of the cycle they are likely to cover.
+  function weatherOdds(ids) {
+    const out = [];
+    for (const g of weatherGroups()) {
+      const counts = [0, 0, 0];
+      for (let d = 0; d < weatherData.cycle; d++) {
+        const tier = weatherTier(weatherOf(g.zones[0].id, d), ids);
+        if (tier >= 0) counts[tier]++;
+      }
+      if (counts[0] + counts[1] + counts[2]) out.push({ group: g, counts, share: counts.reduce((s, c, i) => s + c * TIER_SHARE[i], 0) / weatherData.cycle });
+    }
+    return out.sort((a, b) => b.share - a.share || b.counts[0] - a.counts[0]);
   }
 
   // ---- Calendars and the planner ----
@@ -346,6 +405,7 @@
     rse, rseOfWeek, rseWeeks, nextJpMidnight, nextConquestTally,
     routeStatus, nextDeparture, departureMinutes, guildStatus, nextGuildOpening,
     WEATHERS, WEATHER_ELEMENT, isDoubleWeather, weatherIdsFor, useWeatherData, weatherOf, weatherZones,
+    weatherGroups, weatherTier, findWeather, weatherOdds,
     nextDays, hourSegments, findWindows,
   };
   if (typeof module === 'object' && module.exports) module.exports = Vana;

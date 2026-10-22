@@ -22,7 +22,7 @@
   const DEFAULTS = {
     hour12: null, sound: true, starred: [], routeTab: 'airship', guildCraft: 'all', guildOpenOnly: false,
     calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
-    wxZone: 103, wxCount: 16, discord: '',
+    wxZone: 103, wxCount: 16, discord: '', wxFind: [], wxFindDays: 16,
   };
   const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
   settings.planner = { ...EMPTY_QUERY, ...settings.planner };
@@ -390,9 +390,13 @@
   const ZONE_NAME = new Map(ZONES.map((z) => [z.id, z.name]));
   const ZONE_ID = new Map(ZONES.map((z) => [z.name.toLowerCase(), z.id]));
   const ELEMENT_KEYS = ['fire', 'ice', 'wind', 'earth', 'lightning', 'water', 'light', 'dark'];
+  // Every weather chip is a button that opens the weather finder on that weather.
   function weatherChip(id) {
     const key = V.WEATHER_ELEMENT[id], double = V.isDoubleWeather(id);
-    return el('span', { class: `wx${key ? ` el-${key}` : ' plain'}${double ? ' double' : ''}`, title: key ? `${V.ELEMENTS[key]} weather${double ? ', double' : ''}` : null }, V.WEATHERS[id]);
+    return el('button', {
+      class: `wx${key ? ` el-${key}` : ' plain'}${double ? ' double' : ''}`, type: 'button', 'data-wx': String(id),
+      title: `${key ? `${V.ELEMENTS[key]} weather${double ? ', double' : ''}. ` : ''}Find where and when ${V.WEATHERS[id]} is likely`,
+    }, V.WEATHERS[id]);
   }
   // A zone box takes any spelling of a zone's name; an unknown name is flagged and leaves the setting alone.
   function wireZoneInput(input, get, set, allowEmpty) {
@@ -424,6 +428,83 @@
     count.replaceChildren(...[8, 16, 32, 64].map((n) => { const o = el('option', { value: String(n), text: `${n} days` }); o.selected = n === settings.wxCount; return o; }));
     count.addEventListener('change', (e) => { settings.wxCount = +e.target.value; persist(); });
     $('wx-share').addEventListener('click', () => copyLink(`#weather&zone=${settings.wxZone}`));
+  }
+
+  // ---- Weather finder ----
+  const FIND_WEATHERS = V.WEATHERS.map((_, id) => id).filter((id) => id > 0);
+  const TIERS = ['Usual', 'Common', 'Rare'];
+  function openForecast(zoneId) {
+    settings.wxZone = zoneId; persist();
+    $('wx-zone').value = ZONE_NAME.get(zoneId) || '';
+    $('weather-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // A group's zones as forecast links; a long group shows six and says how many more.
+  function zoneLinks(group) {
+    const shown = group.zones.slice(0, 6), more = group.zones.length - shown.length;
+    const links = shown.flatMap((z, i) => [i ? ', ' : null, el('button', { class: 'link-btn zone-link', type: 'button', onclick: () => openForecast(z.id) }, z.name)]);
+    return el('td', { class: 'wrap zones', title: more ? group.zones.map((z) => z.name).join(', ') : null }, ...links, more ? ` and ${more} more` : null);
+  }
+  function findFor(ids) {
+    settings.wxFind = ids; persist(); buildFinderChips();
+    $('finder-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // The finder's own chips toggle instead; they are checked by class because their click rebuilds
+  // the row, so by the time the click reaches here the chip is no longer inside #wf-chips.
+  document.addEventListener('click', (e) => {
+    const chip = e.target.closest('.wx[data-wx]');
+    if (chip && !chip.classList.contains('pickable')) findFor([Number(chip.dataset.wx)]);
+  });
+  function buildFinderChips() {
+    $('wf-chips').replaceChildren(...FIND_WEATHERS.map((id) => {
+      const on = settings.wxFind.includes(id), chip = weatherChip(id);
+      chip.classList.add('pickable');
+      chip.classList.toggle('active', on);
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+      chip.title = on ? `Stop searching for ${V.WEATHERS[id]}` : `Search for ${V.WEATHERS[id]}`;
+      chip.addEventListener('click', () => {
+        settings.wxFind = on ? settings.wxFind.filter((x) => x !== id) : [...settings.wxFind, id].sort((a, b) => a - b);
+        persist(); buildFinderChips();
+      });
+      return chip;
+    }));
+  }
+  function finderRow(f, now) {
+    const tr = el('tr'), chance = el('span', { class: `state ${f.always ? 'always' : TIERS[f.tier].toLowerCase()}`, text: f.always ? 'Always' : TIERS[f.tier] });
+    const first = V.clock(f.start), lastDay = f.always ? null : V.clock(f.end - 1), days = f.always ? 0 : lastDay.dayNumber - first.dayNumber + 1;
+    const when = f.always ? 'every day' : days === 1 ? V.DAYS[first.weekday].name : `${V.DAYS[first.weekday].name} to ${V.DAYS[lastDay.weekday].name} (${days} days)`;
+    const span = f.always ? null : spanCell(tr, f.start, f.end);
+    tr.append(zoneLinks(f.group), el('td', {}, chance, ' ', weatherChip(f.weather)), el('td', { text: when }),
+      el('td', { class: 'hide-sm', text: f.always ? '-' : earthWhen(f.start, now) }), span ? span.td : el('td', {}, el('span', { class: 'state now', text: 'now' })));
+    return { tr, update: span ? span.update : null };
+  }
+  function oddsRow(r) {
+    const pct = (n) => (n * 100 < 2160 ? '<1' : String(Math.round((n / 2160) * 100)));
+    const cell = (n) => el('td', {}, n ? `${n} days` : '-', n ? el('span', { class: 'sub', text: ` (${pct(n)}%)` }) : null);
+    return { tr: el('tr', {}, zoneLinks(r.group), ...(r.group.fixed ? [el('td', { colspan: 3, text: 'every day, always' })] : r.counts.map(cell))) };
+  }
+  const FINDER_SOON_ROWS = 30, FINDER_ODDS_ROWS = 15;
+  function renderFinder(now) {
+    const ids = settings.wxFind, key = `${ids.join(',')}|${settings.wxFindDays}|${gen}`;
+    liveRows($('wf-soon'), key, now, () => {
+      if (!ids.length) return { rows: [emptyRow(5, 'Click a weather anywhere on the page, or pick one above.')] };
+      const found = V.findWeather(now, ids, settings.wxFindDays);
+      const rows = found.slice(0, FINDER_SOON_ROWS).map((f) => finderRow(f, now));
+      if (found.length > FINDER_SOON_ROWS) rows.push(emptyRow(5, `${found.length - FINDER_SOON_ROWS} more later or less likely. Narrow the search or pick fewer weathers.`));
+      const ends = found.filter((f) => !f.always).map((f) => f.end);
+      return { rows: rows.length ? rows : [emptyRow(5, `Not in the next ${settings.wxFindDays} Vana'diel days. The table below shows where it does happen.`)], expires: ends.length ? Math.min(...ends) : V.clock(now).dayStart + V.DAY };
+    });
+    liveRows($('wf-odds'), key, now, () => {
+      if (!ids.length) return { rows: [emptyRow(4, 'Pick a weather to rank the zones.')] };
+      const odds = V.weatherOdds(ids);
+      return { rows: odds.length ? odds.slice(0, FINDER_ODDS_ROWS).map(oddsRow) : [emptyRow(4, 'No zone in the data has this weather.')] };
+    });
+  }
+  function wireFinder() {
+    const days = $('wf-days');
+    days.replaceChildren(...[8, 16, 32, 64].map((n) => { const o = el('option', { value: String(n), text: `${n} days` }); o.selected = n === settings.wxFindDays; return o; }));
+    days.addEventListener('change', (e) => { settings.wxFindDays = +e.target.value; persist(); });
+    $('wf-share').addEventListener('click', () => copyLink(`#find&w=${settings.wxFind.join(',')}&days=${settings.wxFindDays}`));
+    buildFinderChips();
   }
 
   // ---- Calendars ----
@@ -565,6 +646,12 @@
       };
       persist();
       return 'planner-panel';
+    }
+    if (p.has('find')) {
+      settings.wxFind = [...new Set(ints(p.get('w'), 1, V.WEATHERS.length - 1))].sort((a, b) => a - b);
+      if ([8, 16, 32, 64].includes(Number(p.get('days')))) settings.wxFindDays = Number(p.get('days'));
+      persist();
+      return 'finder-panel';
     }
     if (p.has('weather') && ZONE_NAME.has(Number(p.get('zone')))) {
       settings.wxZone = Number(p.get('zone'));
@@ -804,6 +891,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     document.addEventListener('visibilitychange', tick);
     wirePlanner();
     wireWeather();
+    wireFinder();
     wireDiscord();
     window.addEventListener('hashchange', () => openTarget(applyHash(location.hash)));
   }
@@ -811,7 +899,9 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
   function openTarget(id) {
     if (!id) return;
     buildPlanner();
+    buildFinderChips();
     $('wx-zone').value = ZONE_NAME.get(settings.wxZone) || '';
+    $('wf-days').value = String(settings.wxFindDays);
     tick();
     requestAnimationFrame(() => $(id).scrollIntoView({ block: 'start' }));
   }
@@ -821,7 +911,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     if (miniMode) { renderMini(now); return; }
     checkAlarms(now);
     if (!document.hidden) {
-      renderHero(now); renderRoutes(now); renderGuilds(now); renderWeather(now); renderCalendar(now); renderPlanner(now); renderAlarms(now);
+      renderHero(now); renderRoutes(now); renderGuilds(now); renderWeather(now); renderFinder(now); renderCalendar(now); renderPlanner(now); renderAlarms(now);
     }
     if (mini) renderMini(now);
   }

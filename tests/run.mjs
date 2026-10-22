@@ -322,6 +322,68 @@ test('a weather condition without a zone is ignored rather than matching nothing
   assert.equal(V.clock(w.start).weekday, 7);
 });
 
+// ---- Weather finder ----
+const DUST_STORM = 8, GALES = 11;
+const names = (g) => g.zones.map((z) => z.name);
+test('a weather in the usual slot ranks above common, and common above rare', () => {
+  const w = { normal: 8, common: 10, rare: 11 };
+  assert.deepEqual([[8], [10], [11], [6], [11, 10]].map((ids) => V.weatherTier(w, ids)), [0, 1, 2, -1, 1]);
+});
+test('zone groups cover every weather zone exactly once', () => {
+  const ids = V.weatherGroups().flatMap((g) => g.zones.map((z) => z.id));
+  assert.equal(ids.length, V.weatherZones().length);
+  assert.equal(new Set(ids).size, ids.length);
+});
+test('Valkurm Dunes has dust storms usual on 120 days of the cycle and common on 638 (counted from the SQL)', () => {
+  const row = V.weatherOdds([DUST_STORM]).find((r) => r.group.zones.some((z) => z.id === VALKURM));
+  assert.deepEqual(row.counts, [120, 638, 0]);
+});
+test('Gales ranks the Cloister of Gales first, always on, then both Riverne sites', () => {
+  const [first, second, ...rest] = V.weatherOdds([GALES]);
+  assert.deepEqual([names(first.group), first.counts, first.group.fixed], [['Cloister of Gales'], [2160, 0, 0], true]);
+  assert.deepEqual([names(second.group).sort(), second.counts], [['Riverne - Site #A01', 'Riverne - Site #B01'], [214, 0, 119]]);
+  assert.equal([first, second, ...rest].reduce((n, r) => n + r.group.zones.length, 0), 7);
+});
+test('the finder lists a fixed zone once, as always, ahead of everything else', () => {
+  const found = V.findWeather(at(CYCLE_START, 3), [GALES], 16);
+  assert.equal(found.filter((f) => f.always).length, 1);
+  assert.deepEqual([found[0].always, names(found[0].group)], [true, ['Cloister of Gales']]);
+});
+test('the finder puts Valkurm dust storms in the usual slot on cycle day 17, after the common ones from day 0', () => {
+  const found = V.findWeather(at(CYCLE_START, 3), [DUST_STORM], 32).filter((f) => f.group.zones[0].id === VALKURM);
+  const usual = found.find((f) => f.tier === 0), common = found.find((f) => f.tier === 1);
+  assert.equal(usual.start, V.dayStartOf(CYCLE_START + 17));
+  assert.equal(common.start, V.dayStartOf(CYCLE_START));
+});
+test('Blizzards ranks Uleguerand and Bearclaw (more usual days) above Ranguemont Pass (more rare days)', () => {
+  // Counted from the SQL: Uleguerand Range and Bearclaw Pinnacle 1065 usual / 916 rare, Ranguemont Pass 789 / 1239.
+  const rows = V.weatherOdds([13]).filter((r) => !r.group.fixed);
+  const upper = rows.findIndex((r) => names(r.group).includes('Uleguerand Range')), pass = rows.findIndex((r) => names(r.group).includes('Ranguemont Pass'));
+  assert.deepEqual([rows[upper].counts, rows[pass].counts], [[1065, 0, 916], [789, 0, 1239]]);
+  assert.ok(upper < pass, `Uleguerand at ${upper}, Ranguemont at ${pass}`);
+});
+test('always-on zones come before a usual stretch that began earlier the same day', () => {
+  const found = V.findWeather(at(CYCLE_START + 15, 12), [19], 8);
+  const lastAlways = found.map((f) => f.always).lastIndexOf(true), firstOther = found.findIndex((f) => !f.always);
+  assert.ok(found[firstOther].tier === 0 && found[firstOther].start < at(CYCLE_START + 15, 12), 'a usual stretch is already under way');
+  assert.ok(lastAlways < firstOther);
+});
+test('finder results are sorted by slot, then soonest first', () => {
+  const found = V.findWeather(at(CYCLE_START, 3), [DUST_STORM, 9], 32).filter((f) => !f.always);
+  for (let i = 1; i < found.length; i++) {
+    const a = found[i - 1], b = found[i];
+    assert.ok(a.tier < b.tier || (a.tier === b.tier && a.start <= b.start), `row ${i} out of order`);
+  }
+});
+test('consecutive days in the same slot merge into one stretch', () => {
+  const found = V.findWeather(at(CYCLE_START, 3), [DUST_STORM], 64).filter((f) => f.group.zones[0].id === VALKURM);
+  for (const f of found) for (let n = V.clock(f.start).dayNumber; n < V.clock(f.end - 1).dayNumber + 1; n++) {
+    assert.equal(V.weatherTier(V.weatherOf(VALKURM, n), [DUST_STORM]), f.tier);
+  }
+  const sorted = [...found].sort((a, b) => a.start - b.start);
+  for (let i = 1; i < sorted.length; i++) assert.ok(sorted[i - 1].end < sorted[i].start || sorted[i - 1].tier !== sorted[i].tier);
+});
+
 // ---- User-facing copy agrees with the data ----
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const count = (group) => V.ROUTES.filter((r) => r.group === group).length;

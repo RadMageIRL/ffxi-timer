@@ -254,8 +254,21 @@ h2 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 7px; vertical-align: 1px; }
 
 .wx { display: inline-block; border: 1px solid color-mix(in srgb, currentColor 40%, var(--border)); border-radius: 99px; padding: 1px 8px; font-size: 12px; background: color-mix(in srgb, currentColor 8%, transparent); }
+button.wx { appearance: none; font: inherit; font-size: 12px; cursor: pointer; line-height: 1.4; }
+button.wx:hover { box-shadow: 0 0 0 1px currentColor; }
 .wx.plain { color: var(--muted); }
 .wx.double { font-weight: 700; border-width: 2px; padding: 0 7px; }
+#wf-chips { margin: 8px 0 4px; }
+.wx.pickable { opacity: .62; }
+.wx.pickable.active { opacity: 1; box-shadow: 0 0 0 1px currentColor; background: color-mix(in srgb, currentColor 18%, transparent); }
+.sub-head { font-size: 11px; color: var(--muted); font-weight: 400; letter-spacing: .06em; text-transform: uppercase; margin: 16px 0 4px; }
+.grid td.zones { max-width: 460px; line-height: 1.6; }
+.zone-link { font-size: 13px; color: var(--text); text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.zone-link:hover { color: var(--accent); }
+.state.usual { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 60%, transparent); }
+.state.common { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 60%, transparent); }
+.state.rare { color: var(--muted); }
+.state.always { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .wx-line { white-space: nowrap; }
 .zone-input { width: 230px; border-radius: 5px; }
 .zone-input.invalid, .select.invalid { border-color: var(--danger); color: var(--danger); }
