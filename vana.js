@@ -458,6 +458,31 @@
     return fishingData.spots.filter((s) => s[4].includes(id)).map(([zoneId, zone, area, difficulty]) => ({ zoneId, zone, area, difficulty }));
   }
 
+  // ---- Notorious monsters ----
+  // NMs that can only appear at certain hours, under a certain moon or in certain weather, from
+  // nm-data.js. The moons the server checks (xi.moonCycle, scripts/utils/common.lua) use the same
+  // percent ranges as the phases here; it splits each crescent and gibbous into a lesser and a greater
+  // half, and an NM that names both halves gets the whole phase.
+  const MOON_CYCLE_PHASE = {
+    NEW_MOON: NEW, LESSER_WAXING_CRESCENT: 1, GREATER_WAXING_CRESCENT: 1, FIRST_QUARTER: 2, LESSER_WAXING_GIBBOUS: 3, GREATER_WAXING_GIBBOUS: 3,
+    FULL_MOON: FULL, GREATER_WANING_GIBBOUS: 5, LESSER_WANING_GIBBOUS: 5, THIRD_QUARTER: 6, GREATER_WANING_CRESCENT: 7, LESSER_WANING_CRESCENT: 7,
+  };
+  let nmData = null;
+  const useNmData = (data) => { nmData = data; };
+  const nmList = () => { if (!nmData && root.VanaNmData) nmData = root.VanaNmData; return nmData || []; };
+  // Fog in these NMs' zones only ever comes from the morning fog: the zones never roll Fog itself (a
+  // test checks it), and outside cities a Clear, Sunshine or Clouds roll shows as Fog from 02:00 to 07:00.
+  const isFogOnly = (nm) => !!nm.weather && nm.weather.length === 1 && nm.weather[0] === FOG;
+  // An NM's conditions as a search for findWindows.
+  function nmQuery(nm) {
+    const fog = isFogOnly(nm);
+    return {
+      hours: fog ? [[FOG_FROM, FOG_TO]] : nm.hours, weekdays: nm.weekday == null ? [] : [nm.weekday],
+      phases: [...new Set((nm.moon || []).map((m) => MOON_CYCLE_PHASE[m]))].sort((a, b) => a - b),
+      zone: nm.weather ? nm.zoneId : null, weatherIds: fog ? [0, 1, 2, FOG] : nm.weather || [],
+    };
+  }
+
   // ---- Calendars and the planner ----
   function nextDays(t, count, weekday = null) {
     const out = [];
@@ -477,14 +502,18 @@
   // Windows from t on when every condition holds, merged across midnights. Weekday, moon and weather
   // are per-day conditions; hours narrow each matching day. A window already open at t is included.
   // Weather needs a zone and elements; weatherChance 'usual' accepts only the day's normal weather.
+  // Two forms the planner's own controls don't make: `hours`, a list of [from, to) hour spans in place
+  // of from/to, and `weatherIds`, exact weathers in place of elements.
   // Weekdays repeat every 8 days, the moon every 84 and weather every 2,160, so every combination
   // recurs within their least common multiple, 15,120 days: a search that long that finds nothing
   // means never.
   const FULL_CYCLE = 15120;
   function findWindows(t, query, count = 8, horizonDays = FULL_CYCLE) {
-    const q = query || {}, segs = hourSegments(q.from, q.to);
+    const q = query || {}, segs = q.hours && q.hours.length ? [...q.hours].sort((a, b) => a[0] - b[0]) : hourSegments(q.from, q.to);
     const minP = q.minPercent ?? 0, maxP = q.maxPercent ?? 100;
-    const wxIds = q.zone != null && q.weatherElements && q.weatherElements.length ? weatherIdsFor(q.weatherElements, q.weatherDouble) : null;
+    const wxIds = q.zone == null ? null
+      : q.weatherIds && q.weatherIds.length ? q.weatherIds
+      : q.weatherElements && q.weatherElements.length ? weatherIdsFor(q.weatherElements, q.weatherDouble) : null;
     const weatherMatches = (n) => {
       const w = weatherOf(q.zone, n);
       return !!w && (wxIds.includes(w.normal) || (q.weatherChance !== 'usual' && (wxIds.includes(w.common) || wxIds.includes(w.rare))));
@@ -555,7 +584,7 @@
     WEATHERS, WEATHER_ELEMENT, isDoubleWeather, weatherIdsFor, useWeatherData, weatherOf, weatherZones,
     FOG, FOG_FROM, FOG_TO, isCity, hasMorningFog, weatherGroups, weatherTier, findWeather, weatherOdds,
     fishingMoon, fishingMoonOfDay, FISH_MOON, FISH_MOON_CITY, FISH_MOON_BEST, FISH_WEATHER, BITE_WAIT, BITE_HOURS,
-    bestFishingMoons, useFishingData, fishList, fishOf, fishSpots,
+    bestFishingMoons, useFishingData, fishList, fishOf, fishSpots, MOON_CYCLE_PHASE, useNmData, nmList, nmQuery, isFogOnly,
     nextDays, hourSegments, findWindows, icsCalendar,
   };
   if (typeof module === 'object' && module.exports) module.exports = Vana;

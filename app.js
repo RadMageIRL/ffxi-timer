@@ -8,6 +8,8 @@
   const GROUP = { airship: 'Airship', ferry: 'Ferry', manaclipper: 'Manaclipper', barge: 'Barge' };
   const guildKey = (g) => g.npc.split(',')[0]; // NPC names are unique, craft and place are not
   const GUILD = Object.fromEntries(V.SHOPS.map((g) => [guildKey(g), g]));
+  const nmKey = (nm) => `${nm.name}|${nm.zoneId}`; // two NMs can share a name in different zones
+  const NM = new Map(V.nmList().map((nm) => [nmKey(nm), nm]));
   const shopName = (g) => (g.kind === 'guild' ? `${g.craft} guild` : `${g.craft} shop`);
   const miniMode = document.documentElement.classList.contains('mini-mode');
 
@@ -122,6 +124,7 @@
     conquest: { valid: () => true, next: (r, t) => V.nextConquestTally(t), label: () => 'Conquest tally' },
     moon: { valid: (r) => r === '0' || r === '4', next: (r, t) => phaseStart(Number(r), t), label: (r) => `${V.MOON_PHASES[r]} begins` },
     planner: { valid: (r) => r && typeof r === 'object', next: (q, t) => { const w = V.findWindows(t, q, 3).find((x) => x.start > t); return w ? w.start : null; }, label: (q) => `Planner: ${describeQuery(q)}` },
+    nm: { valid: (r) => NM.has(r), next: (r, t) => { const w = V.findWindows(t, V.nmQuery(NM.get(r)), 3).find((x) => x.start > t); return w ? w.start : null; }, label: (r) => `${NM.get(r).name} can appear` },
   };
   // A planner alarm is keyed by its search, so each saved search can have its own.
   const planKey = (q) => planHash({ ...EMPTY_QUERY, ...q }).slice(1);
@@ -1036,6 +1039,60 @@
     $('fish-share').addEventListener('click', () => copyLink(`#fish&f=${settings.fishId}`));
   }
 
+  // ---- Notorious monsters ----
+  // Each NM's conditions, how it pops, and when its conditions next hold, soonest first. A weather
+  // condition is a day that weather can come up, with the slot it takes that day.
+  function hoursText(hours) {
+    if (!hours) return '';
+    const spans = [...hours].sort((a, b) => a[0] - b[0]).map((s) => [...s]);
+    // A span to 24:00 and one from 00:00 are one span across midnight.
+    if (spans.length > 1 && spans[0][0] === 0 && spans[spans.length - 1][1] === 24) spans[spans.length - 1][1] = spans.shift()[1];
+    const length = ([a, b]) => (b - a + 24) % 24 || 24;
+    if (spans.length > 1 && spans.every((s) => length(s) === 1)) return `${spans.map(([a]) => `${pad(a)}:00`).join(', ')} (an hour each)`;
+    return spans.map(([a, b]) => `${pad(a)}:00-${pad(b % 24)}:00`).join(', ');
+  }
+  const duration = (s) => (s >= 3600 ? `${+(s / 3600).toFixed(1)}h` : `${Math.round(s / 60)} min`);
+  function popsText(nm) {
+    const parts = [];
+    if (nm.lottery) parts.push(`${nm.lottery.chance}% when its placeholder respawns after a kill${nm.lottery.cooldown ? `; can't return for ${duration(nm.lottery.cooldown)} after it dies` : ''}`);
+    // Some of these are respawn timers and some are lockouts; either way it can't come back sooner.
+    if (nm.respawn) parts.push(`can't appear again for ${nm.respawn.min === nm.respawn.max ? duration(nm.respawn.min) : `${duration(nm.respawn.min)} to ${duration(nm.respawn.max)}`} after it dies`);
+    return parts.join('; ') || nm.pop || '';
+  }
+  function moonText(q) {
+    if (!q.phases.length) return '';
+    if (q.phases.length < 5) return q.phases.map((p) => V.MOON_PHASES[p]).join(' or ');
+    return `any moon but ${V.MOON_PHASES.filter((_, p) => !q.phases.includes(p)).join(' or ')}`;
+  }
+  function nmRow(nm, now) {
+    const q = V.nmQuery(nm), fog = V.isFogOnly(nm), [w] = V.findWindows(now, q, 1);
+    const tr = el('tr'), when = w ? spanCell(tr, w.start, w.end) : null, c = w ? V.clock(w.start) : null;
+    const needs = [hoursText(fog ? q.hours : nm.hours), moonText(q), nm.weekday == null ? '' : V.DAYS[nm.weekday].name].filter(Boolean).join(' · ');
+    let next = el('span', { class: 'muted', text: 'never' });
+    if (w) {
+      next = el('span', {}, dayName(c.weekday), ` ${earthWhen(w.start, now)}`);
+      if (nm.weather) {
+        // The slot the weather takes that day; for the morning fog, the slot of the roll that turns to Fog.
+        const wx = V.weatherOf(nm.zoneId, c.dayNumber), tier = V.weatherTier(wx, q.weatherIds);
+        next.append(' ', el('span', { class: `state ${TIERS[tier].toLowerCase()}`, text: TIERS[tier] }), ' ', weatherChip(fog ? V.FOG : [wx.normal, wx.common, wx.rare][tier]));
+      }
+    }
+    tr.append(
+      el('td', { class: 'wrap' }, el('strong', { text: nm.name }), nm.extra ? el('div', { class: 'sub', text: nm.extra }) : null),
+      el('td', { class: 'wrap' }, ZONE_NAME.has(nm.zoneId) ? el('button', { class: 'link-btn zone-link', type: 'button', onclick: () => openForecast(nm.zoneId) }, nm.zone) : nm.zone),
+      el('td', { class: 'wrap' }, needs || null, needs && nm.weather ? ' · ' : null, ...(nm.weather || []).flatMap((id, i) => [i ? ' ' : null, weatherChip(id)])),
+      el('td', { class: 'wrap sub hide-sm', text: popsText(nm) }),
+      el('td', { class: 'wrap' }, next), when ? when.td : el('td', { text: '-' }),
+      el('td', { class: 'c-bell' }, bell(`nm:${nmKey(nm)}`, `Alarm when ${nm.name} can next appear`)));
+    return { tr, update: when ? when.update : null, start: w ? w.start : Infinity, end: w ? w.end : Infinity };
+  }
+  function renderNms(now) {
+    liveRows($('nm-body'), `${gen}`, now, () => {
+      const rows = [...NM.values()].map((nm) => nmRow(nm, now)).sort((a, b) => a.start - b.start);
+      return { rows: rows.length ? rows : [emptyRow(7, 'No NMs loaded.')], expires: Math.min(...rows.map((r) => r.end)) };
+    });
+  }
+
   // ---- Alarm list ----
   function alarmRow(a) {
     const id = alarmId(a), src = SOURCES[a.kind];
@@ -1302,7 +1359,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
       if (settings.view === 'simple') renderSimple(now);
       else {
         renderRoutes(now); renderTrips(now); renderGuilds(now); renderWeather(now); renderFinder(now);
-        renderCalendar(now); renderConverter(now); renderPlanner(now); renderFishing(now); renderAlarms(now);
+        renderCalendar(now); renderConverter(now); renderPlanner(now); renderFishing(now); renderNms(now); renderAlarms(now);
       }
     }
     if (mini) renderMini(now);

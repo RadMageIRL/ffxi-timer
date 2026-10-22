@@ -2,6 +2,14 @@
 
 Every version of ffxi-timer and what changed in it, newest first. Dates are the day I released each one.
 
+## v0.7 (2026-10-22)
+
+Added
+- A Notorious monsters panel with 41 NMs that can only appear at certain hours, under a certain moon or in certain weather. Each row shows what the NM needs, how it pops (a lottery off its placeholder, a timer, a ??? or a weather change) and when its conditions next line up, soonest first. Weather conditions show how likely that weather is that day.
+- A bell on each NM, which sets an alarm for when it can next appear.
+- `nm-data.js`, where every NM cites the LandSandBoat lines its conditions come from, and `tools/check-nms.mjs`, which checks those lines against a LandSandBoat checkout.
+- Planner searches can now use several hour spans and exact weathers, which some NMs need (Silk Caterpillar's four one-hour chances a day, King Vinegarroon's Dust Storm or Sand Storm).
+
 ## v0.6 (2026-10-22)
 
 Added

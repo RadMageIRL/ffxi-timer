@@ -363,6 +363,19 @@ test('with any chance, a day where dust storms are only common counts too', () =
   const [w] = V.findWindows(at(CYCLE_START, 3), { zone: VALKURM, weatherElements: ['earth'] }, 1);
   assert.equal(w.start, V.dayStartOf(CYCLE_START));
 });
+test('a list of hour spans finds each span, and spans that meet across midnight merge', () => {
+  const wins = V.findWindows(at(FIRESDAY, 2, 30), { hours: [[9, 10], [3, 4], [21, 22], [15, 16]] }, 4);
+  assert.deepEqual(wins.map((w) => [V.clock(w.start).hour, (w.end - w.start) / V.HOUR]), [[3, 1], [9, 1], [15, 1], [21, 1]]);
+  const [night] = V.findWindows(at(FIRESDAY, 12), { hours: [[0, 5], [17, 24]] }, 1);
+  assert.deepEqual([night.start, night.end], [at(FIRESDAY, 17), at(FIRESDAY + 1, 5)]);
+});
+test('exact weathers match only those weathers: Sand Storm without Dust Storm', () => {
+  const ids = (w) => [w.normal, w.common, w.rare];
+  const sand = V.findWindows(at(CYCLE_START), { zone: VALKURM, weatherIds: [9] }, 3), dust = V.findWindows(at(CYCLE_START), { zone: VALKURM, weatherIds: [8] }, 1);
+  for (const w of sand) assert.ok(ids(V.weatherOf(VALKURM, V.clock(w.start).dayNumber)).includes(9));
+  assert.equal(dust[0].start, V.dayStartOf(CYCLE_START), 'Valkurm has dust storms on cycle day 0');
+  assert.ok(!sand.length || sand[0].start > dust[0].start);
+});
 test('a weather condition without a zone is ignored rather than matching nothing', () => {
   const [w] = V.findWindows(at(FIRESDAY, 3), { weekdays: [7], weatherElements: ['earth'] }, 1);
   assert.equal(V.clock(w.start).weekday, 7);
@@ -510,6 +523,57 @@ test('the nine harder fishing zones carry their difficulty', () => {
     'Quicksand Caves': 2, 'Talacca Cove': 3, 'The Boyahda Tree': 5, 'Zeruhn Mines': 3 });
 });
 
+// ---- Notorious monsters ----
+V.useNmData(createRequire(import.meta.url)('../nm-data.js'));
+const nmNamed = (name) => V.nmList().find((n) => n.name === name);
+test('every NM cites its source and names only moons and weathers the page knows', () => {
+  for (const nm of V.nmList()) {
+    assert.ok(nm.sources.length && nm.sources.every((s) => s.file && s.line > 0 && s.text.length >= 10), nm.name);
+    for (const m of nm.moon || []) assert.ok(m in V.MOON_CYCLE_PHASE, `${nm.name}: ${m}`);
+    for (const id of nm.weather || []) assert.ok(V.WEATHERS[id], `${nm.name}: weather ${id}`);
+    for (const [a, b] of nm.hours || []) assert.ok(a >= 0 && b <= 24 && a < b, `${nm.name}: hours ${a}-${b}`);
+  }
+});
+test('an NM that names half a crescent or gibbous names the other half too, so whole phases are right', () => {
+  const pairs = [['LESSER_WAXING_CRESCENT', 'GREATER_WAXING_CRESCENT'], ['LESSER_WAXING_GIBBOUS', 'GREATER_WAXING_GIBBOUS'], ['GREATER_WANING_GIBBOUS', 'LESSER_WANING_GIBBOUS'], ['GREATER_WANING_CRESCENT', 'LESSER_WANING_CRESCENT']];
+  for (const nm of V.nmList()) for (const [a, b] of pairs) assert.equal((nm.moon || []).includes(a), (nm.moon || []).includes(b), nm.name);
+});
+test('every NM with a weather condition is in a zone the forecast covers', () => {
+  const zones = new Set(V.weatherZones().map((z) => z.id));
+  for (const nm of V.nmList().filter((n) => n.weather)) assert.ok(zones.has(nm.zoneId), `${nm.name} in ${nm.zone}`);
+});
+test('fog NMs live outside cities in zones that never roll Fog themselves, so only the morning fog counts', () => {
+  const fogNms = V.nmList().filter(V.isFogOnly);
+  assert.deepEqual(fogNms.map((n) => n.name).sort(), ['Baumesel', 'Odqan']);
+  for (const nm of fogNms) {
+    assert.ok(!V.isCity(nm.zoneId) && !nm.hours, nm.name);
+    for (let d = 0; d < 2160; d++) { const w = V.weatherOf(nm.zoneId, d); assert.ok(![w.normal, w.common, w.rare].includes(V.FOG), `${nm.name} day ${d}`); }
+    for (const w of V.findWindows(at(CYCLE_START), V.nmQuery(nm), 5)) assert.ok(V.clock(w.start).hour >= 2 && V.clock(w.end - 1).hour < 7, nm.name);
+  }
+});
+test('Haty can only appear under a full moon between 17:00 and 05:00', () => {
+  const wins = V.findWindows(at(FIRESDAY), V.nmQuery(nmNamed('Haty')), 6);
+  assert.ok(wins.length === 6);
+  for (const w of wins) {
+    for (let t = w.start; t < w.end; t += V.HOUR) {
+      const c = V.clock(t);
+      assert.ok((c.hour >= 17 || c.hour < 5) && V.moon(t).phase === V.FULL, `${c.hour}:00 ${V.moon(t).percent}%`);
+    }
+  }
+});
+test('Silk Caterpillar gets four one-hour chances a day, at 03:00, 09:00, 15:00 and 21:00', () => {
+  const wins = V.findWindows(at(FIRESDAY), V.nmQuery(nmNamed('Silk Caterpillar')), 4);
+  assert.deepEqual(wins.map((w) => [V.clock(w.start).hour, (w.end - w.start) / V.HOUR]), [[3, 1], [9, 1], [15, 1], [21, 1]]);
+});
+test('King Vinegarroon waits for Dust Storm or Sand Storm in Western Altepa Desert', () => {
+  const nm = nmNamed('King Vinegarroon'), q = V.nmQuery(nm);
+  assert.deepEqual([nm.zone, q.weatherIds, q.hours], ['Western Altepa Desert', [8, 9], null]);
+  for (const w of V.findWindows(at(CYCLE_START), q, 5)) assert.ok(V.weatherTier(V.weatherOf(nm.zoneId, V.clock(w.start).dayNumber), [8, 9]) >= 0);
+});
+test("Agas's moon list is every moon but New Moon", () => {
+  assert.deepEqual(V.nmQuery(nmNamed('Agas')).phases, [1, 2, 3, 4, 5, 6, 7]);
+});
+
 // ---- Converter ----
 test('fromVana is the inverse of clock', () => {
   assert.equal(V.fromVana(886, 1, 1), V.EPOCH);
@@ -547,6 +611,7 @@ test('the About dialog counts match the route and guild data', () => {
   assert.match(html, new RegExp(`${V.GUILDS.length} guild shops and ${V.SHOPS.length - V.GUILDS.length} other shops`));
   assert.match(html, new RegExp(`weather forecast for ${V.weatherZones().length} zones`));
   assert.match(html, new RegExp(`Fishing for ${V.fishList().length} fish`));
+  assert.match(html, new RegExp(`${new Set(V.nmList().map((n) => n.name)).size} notorious monsters that only appear`));
 });
 test('the About dialog example departure is what the data gives', () => {
   const [first] = V.departureMinutes(ROUTE['jeuno-sandoria']);
