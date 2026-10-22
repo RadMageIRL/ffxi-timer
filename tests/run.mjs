@@ -384,6 +384,53 @@ test('consecutive days in the same slot merge into one stretch', () => {
   for (let i = 1; i < sorted.length; i++) assert.ok(sorted[i - 1].end < sorted[i].start || sorted[i - 1].tier !== sorted[i].tier);
 });
 
+// ---- Morning fog ----
+// City types read from each zone's data/zones/<name>/zone.yaml in LandSandBoat (commit ed34371).
+const CITIES = ['Aht Urhgan Whitegate', 'Al Zahbi', 'Bastok Markets', 'Bastok Markets [S]', 'Bastok Mines', "Chateau d'Oraguille",
+  'Heavens Tower', 'Kazham', 'Lower Jeuno', 'Metalworks', 'Mhaura', 'Norg', "Northern San d'Oria", 'Port Bastok', 'Port Jeuno',
+  "Port San d'Oria", 'Port Windurst', 'Rabao', "Ru'Lude Gardens", "Sealion's Den", 'Selbina', "Southern San d'Oria",
+  "Southern San d'Oria [S]", 'Tavnazian Safehold', 'The Colosseum', 'Upper Jeuno', 'Windurst Walls', 'Windurst Waters',
+  'Windurst Waters [S]', 'Windurst Woods'];
+test('the 30 zones LandSandBoat types as cities are the ones flagged as cities', () => {
+  assert.deepEqual(V.weatherZones().filter((z) => V.isCity(z.id)).map((z) => z.name).sort(), [...CITIES].sort());
+});
+test('morning fog is in every zone outside the cities except those fixed on an elemental weather', () => {
+  const zones = V.weatherZones(), fog = zones.filter((z) => V.hasMorningFog(z.id));
+  assert.equal(fog.length, zones.length - CITIES.length - zones.filter((z) => z.fixed).length);
+  assert.deepEqual([VALKURM, QUFIM].map(V.hasMorningFog), [true, true]);
+  const cloister = zones.find((z) => z.name === 'Cloister of Gales'), jeuno = zones.find((z) => z.name === 'Port Jeuno');
+  assert.deepEqual([V.hasMorningFog(cloister.id), V.hasMorningFog(jeuno.id), V.hasMorningFog(9999)], [false, false, false]);
+  assert.deepEqual([V.WEATHERS[V.FOG], V.FOG_FROM, V.FOG_TO], ['Fog', 2, 7]);
+});
+
+// ---- Converter ----
+test('fromVana is the inverse of clock', () => {
+  assert.equal(V.fromVana(886, 1, 1), V.EPOCH);
+  assert.equal(V.fromVana(898, 2, 1), Date.UTC(2002, 5, 23, 15));
+  for (const t of [V.EPOCH + 123456789, Date.UTC(2026, 9, 22, 11, 35, 34), at(FIRESDAY, 13, 47)]) {
+    const c = V.clock(t), back = V.fromVana(c.year, c.month, c.date, c.hour, c.minute, c.second);
+    assert.ok(t - back >= 0 && t - back < V.SEC, `${t} came back as ${back}`);
+  }
+});
+
+// ---- Calendar files ----
+const ICS_EVENT = { uid: 'moon-4-1@ffxi-timer', start: Date.UTC(2026, 9, 22, 11, 35, 34), end: Date.UTC(2026, 9, 22, 12, 33, 10), summary: 'FFXI Full Moon', description: '90% to 95%, Lightsday; then Darksday', alarmMinutes: 3 };
+test('a calendar file has CRLF lines, UTC times, escaped text and a reminder', () => {
+  const ics = V.icsCalendar([ICS_EVENT], Date.UTC(2026, 9, 22, 0, 0, 0));
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n') && ics.endsWith('END:VCALENDAR\r\n'));
+  assert.ok(!/[^\r]\n/.test(ics), 'every line break is CRLF');
+  for (const line of ['DTSTAMP:20261022T000000Z', 'DTSTART:20261022T113534Z', 'DTEND:20261022T123310Z', 'UID:moon-4-1@ffxi-timer',
+    'DESCRIPTION:90% to 95%\\, Lightsday\\; then Darksday', 'TRIGGER:-PT3M']) assert.ok(ics.includes(`\r\n${line}\r\n`), line);
+  assert.equal(ics.match(/BEGIN:VEVENT/g).length, 1);
+});
+test('long calendar lines fold at 75 octets, counting multi-byte characters', () => {
+  const ics = V.icsCalendar([{ ...ICS_EVENT, description: `${'x'.repeat(100)} ${'é'.repeat(60)} ${"Vana'diel → ".repeat(10)}` }], 0);
+  const lines = ics.split('\r\n');
+  assert.ok(lines.every((l) => Buffer.byteLength(l, 'utf8') <= 75), 'no line is over 75 octets');
+  const unfolded = ics.replace(/\r\n /g, '');
+  assert.ok(unfolded.includes(`DESCRIPTION:${'x'.repeat(100)} ${'é'.repeat(60)} `), 'folding loses nothing');
+});
+
 // ---- User-facing copy agrees with the data ----
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const count = (group) => V.ROUTES.filter((r) => r.group === group).length;

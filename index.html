@@ -16,13 +16,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
-  <title>FFXI Timer v0.3 - Vana'diel clock, ships and guilds</title>
+  <title>FFXI Timer v0.4 - Vana'diel clock, ships and guilds</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app" id="app">
     <header class="topbar">
-      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.3 · vana'diel clock · ships · guilds · alarms</span></div>
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.4 · vana'diel clock · ships · guilds · alarms</span></div>
       <nav class="toolbar" aria-label="Controls">
         <button class="button" id="hour-toggle" type="button" title="Earth times in 12 or 24 hour format">12h</button>
         <button class="button" id="sound-toggle" type="button" title="Play a chime when an alarm fires">Sound: on</button>
@@ -80,6 +80,16 @@
           <div><dt>RSE changes</dt><dd id="r-rse-next">-</dd></div>
         </dl>
       </div>
+
+      <div class="card zones-card" id="zones-card" hidden>
+        <div class="card-label">Starred zones</div>
+        <div class="table-wrap">
+          <table class="grid starred-zones">
+            <thead><tr><th class="c-star"><span class="sr-only">Star</span></th><th>Zone</th><th>Today: usual, common, rare</th><th class="hide-sm">Tomorrow</th></tr></thead>
+            <tbody id="zones-body"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="transport-panel" aria-labelledby="transport-title">
@@ -120,11 +130,13 @@
         <h2 id="weather-title">Weather</h2>
         <div class="option-group">
           <input class="select zone-input" id="wx-zone" list="zone-list" placeholder="Zone" aria-label="Weather zone" autocomplete="off" spellcheck="false">
+          <button class="button small star-btn" id="wx-star" type="button" aria-pressed="false" title="Show this zone's weather at the top of the page, in the converter and in the mini clock">☆ Star zone</button>
           <select class="select" id="wx-count" aria-label="Days to show"></select>
           <button class="button small" id="wx-share" type="button" title="Copy a link that opens this zone's forecast">Copy link</button>
         </div>
       </div>
       <p class="hint">Each zone's weather follows a fixed 2,160-day cycle. Every Vana'diel day names a usual, a common and a rare weather, and the game switches among those three during the day, so this is a forecast of odds, not a promise. Double weather is in bold.</p>
+      <p class="hint" id="wx-fog" hidden>From 02:00 to 07:00 Vana'diel time, LandSandBoat servers show Fog here whenever the weather would be Clear, Sunshine or Clouds. Cities don't get this morning fog, and LandSandBoat notes that retail fog works differently.</p>
       <div class="table-wrap">
         <table class="grid weather">
           <thead><tr><th>Vana'diel day</th><th class="hide-sm">Starts</th><th>In</th><th>Usual</th><th>Common</th><th>Rare</th></tr></thead>
@@ -145,6 +157,7 @@
       </div>
       <p class="hint">Click any weather on the page, or pick some here, to see which zones are most likely to have it and when. A weather in a day's usual slot beats the common slot, and common beats rare. Zones that always share their weather are listed together; click a zone for its forecast.</p>
       <div class="chips" id="wf-chips"></div>
+      <p class="hint" id="wf-fog" hidden>These tables show the Fog that each zone's weather cycle names. On LandSandBoat servers, every zone outside the cities also has Fog from 02:00 to 07:00 whenever the weather would be Clear, Sunshine or Clouds.</p>
       <h3 class="sub-head">Soonest chances</h3>
       <div class="table-wrap">
         <table class="grid finder">
@@ -165,10 +178,13 @@
     <section class="panel" id="calendar-panel" aria-labelledby="calendar-title">
       <div class="panel-head">
         <h2 id="calendar-title">Calendars</h2>
-        <div class="tabs" role="tablist" aria-label="Calendar" id="cal-tabs">
-          <button type="button" data-tab="days">Days</button>
-          <button type="button" data-tab="moon">Moon</button>
-          <button type="button" data-tab="rse">RSE</button>
+        <div class="option-group">
+          <div class="tabs" role="tablist" aria-label="Calendar" id="cal-tabs">
+            <button type="button" data-tab="days">Days</button>
+            <button type="button" data-tab="moon">Moon</button>
+            <button type="button" data-tab="rse">RSE</button>
+          </div>
+          <button class="button small" id="cal-ics" type="button" title="Download the listed events as a calendar file">Add to calendar</button>
         </div>
       </div>
       <div class="controls" id="cal-controls"></div>
@@ -179,6 +195,30 @@
         </table>
       </div>
       <div class="rse-detail" id="rse-detail" hidden></div>
+    </section>
+
+    <section class="panel" id="convert-panel" aria-labelledby="convert-title">
+      <div class="panel-head">
+        <h2 id="convert-title">Converter</h2>
+        <button class="button small" id="cv-now" type="button" title="Go back to following the clock">Now</button>
+      </div>
+      <p class="hint">One moment in Earth and Vana'diel time. Change either side and the other follows. Earth time is in your time zone.</p>
+      <div class="convert-grid">
+        <label class="option-group"><span class="option-label">Earth</span><input class="select" id="cv-earth" type="datetime-local" step="1"></label>
+        <div class="option-group" role="group" aria-label="Vana'diel date and time">
+          <span class="option-label">Vana'diel</span>
+          <span class="muted">C.E.</span>
+          <input class="num" id="cv-year" type="number" step="1" aria-label="Vana'diel year">
+          <span class="muted">-</span>
+          <input class="num short" id="cv-month" type="number" min="1" max="12" step="1" aria-label="Vana'diel month">
+          <span class="muted">-</span>
+          <input class="num short" id="cv-date" type="number" min="1" max="30" step="1" aria-label="Vana'diel day of the month">
+          <input class="num short pad-left" id="cv-hour" type="number" min="0" max="23" step="1" aria-label="Vana'diel hour">
+          <span class="muted">:</span>
+          <input class="num short" id="cv-minute" type="number" min="0" max="59" step="1" aria-label="Vana'diel minute">
+        </div>
+      </div>
+      <div class="convert-out" id="cv-out"></div>
     </section>
 
     <section class="panel" id="planner-panel" aria-labelledby="planner-title">
@@ -209,7 +249,9 @@
           <span class="muted">to</span>
           <input class="num" id="pl-max" type="number" min="0" max="100" step="1" aria-label="Maximum moon percent">
           <button class="button small" id="pl-clear" type="button">Clear</button>
+          <button class="button small" id="pl-save" type="button" title="Keep this search with the presets">Save</button>
           <button class="button small" id="pl-share" type="button" title="Copy a link that opens the planner with these conditions">Copy link</button>
+          <button class="button small" id="pl-ics" type="button" title="Download the next windows as a calendar file">Add to calendar</button>
           <button class="bell labeled" type="button" data-alarm="planner:" id="pl-alarm" aria-label="Alarm when the next window opens"><span>Alarm</span></button>
         </div>
       </div>
@@ -245,7 +287,7 @@
         <button class="button small" id="discord-test" type="button">Send test</button>
         <span class="hint inline" id="discord-status"></span>
       </div>
-      <p class="hint">With a webhook saved, every alarm also posts to that Discord channel. The URL stays in this browser and is sent only to Discord.</p>
+      <p class="hint">With a webhook saved, alarms also post to that Discord channel; each alarm in the list above has its own Discord switch. The URL stays in this browser and is sent only to Discord.</p>
     </section>
 
     <footer class="footer">
@@ -259,7 +301,7 @@
 
   <dialog class="about" id="about-dialog" aria-labelledby="about-title">
     <form method="dialog" class="about-body">
-      <h2 id="about-title">ffxi-timer v0.3</h2>
+      <h2 id="about-title">ffxi-timer v0.4</h2>
       <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from the Earth clock; nothing is fetched and nothing leaves the browser.</p>
       <h3>What it shows</h3>
       <ul>
@@ -268,15 +310,17 @@
         <li>JP midnight, the weekly conquest tally (Monday 00:00 JST) and this week's RSE race and dungeon</li>
         <li>All 8 airships, the 6 Selbina, Mhaura, Whitegate and Nashmau boats, the Manaclipper and the Phanauet barge: boarding status, departure in Vana'diel and local time, countdown and landing time</li>
         <li>22 guild shops and 10 other shops with set hours (Tenshodo, linkshells, chips, ferry fishing), with each NPC, holiday, open or closed status and the next open stretch in local time</li>
-        <li>Day, moon and RSE calendars, and a planner that finds when weekday, hour and moon conditions next line up</li>
+        <li>Day, moon and RSE calendars, and a planner that finds when weekday, hour and moon conditions next line up, with saved searches that can each have an alarm</li>
+        <li>Add to calendar: calendar lists and planner windows download as an .ics file for Google Calendar, Outlook or Apple Calendar, with a reminder</li>
+        <li>A converter between Earth and Vana'diel dates and times, with the weekday, moon and your starred zones' weather</li>
         <li>RSE details for any week: the chest key to trade, every monster that drops it, your race's set pieces and the sachet NM</li>
-        <li>A weather forecast for 218 zones, and weather as a planner condition</li>
+        <li>A weather forecast for 218 zones, and weather as a planner condition; press Star zone to keep a zone's weather for today and tomorrow at the top and in the mini clock</li>
         <li>A weather finder: click any weather to see which zones are most likely to have it and when</li>
         <li>Copy link buttons that share a planner search, a zone's forecast or a weather finder search</li>
-        <li>Alarms with browser notifications, a chime and optional Discord posts, and a mini clock that stays on top of the game window (Chrome and Edge)</li>
+        <li>Alarms with browser notifications, a chime and optional Discord posts you can switch per alarm, and a mini clock that stays on top of the game window (Chrome and Edge)</li>
       </ul>
       <h3>Accuracy</h3>
-      <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours, the RSE quest steps and the weather cycles come from LandSandBoat's data and scripts. Weather is a forecast of odds: each day names three weathers and the game moves among them.</p>
+      <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours, the RSE quest steps and the weather cycles come from LandSandBoat's data and scripts. Weather is a forecast of odds: each day names three weathers and the game moves among them. Outside cities, LandSandBoat servers also turn Clear, Sunshine and Clouds into Fog from 02:00 to 07:00.</p>
       <h3>Shortcuts</h3>
       <p><kbd>T</kbd> theme · <kbd>M</kbd> mini clock · <kbd>?</kbd> this dialog</p>
       <div class="about-actions"><button class="button" value="close">Close</button></div>

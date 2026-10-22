@@ -39,6 +39,9 @@
     };
   }
   const dayStartOf = (dayNumber) => EPOCH + dayNumber * DAY;
+  // The Earth time of a Vana'diel date and time; the inverse of clock().
+  const fromVana = (year, month, date, hour = 0, minute = 0, second = 0) =>
+    EPOCH + (year - BASE_YEAR) * YEAR + (month - 1) * MONTH + (date - 1) * DAY + hour * HOUR + minute * MIN + second * SEC;
   // Vana'diel clock time of an Earth timestamp as minutes past midnight.
   const minuteOfDay = (t) => Math.floor(mod(t - EPOCH, DAY) / MIN);
 
@@ -284,6 +287,15 @@
   function weatherZones() {
     return loadWeather() ? [...weatherIndex.values()].map(({ id, name, fixed }) => ({ id, name, fixed: !!fixed })).sort((a, b) => a.name.localeCompare(b.name)) : [];
   }
+  // Outside cities the server turns any roll below Hot Spell (Clear, Sunshine, Clouds) into Fog from
+  // 02:00 to 07:00. LandSandBoat's own comment says retail fog is not simply a time of day; this is
+  // what its servers do. A zone fixed on an elemental weather never rolls anything else.
+  const FOG = 3, FOG_FROM = 2, FOG_TO = 7;
+  const isCity = (zoneId) => loadWeather() && (weatherData.cities || []).includes(zoneId);
+  function hasMorningFog(zoneId) {
+    const z = loadWeather() && weatherIndex.get(zoneId);
+    return !!z && !isCity(zoneId) && (!z.fixed || unpack(z.packed).normal < 4);
+  }
   // Zones that share a pattern, or the same fixed weather, always have the same weather: one group.
   function weatherGroups() {
     if (!loadWeather()) return [];
@@ -398,15 +410,44 @@
     return out.slice(0, count);
   }
 
+  // ---- Calendar files ----
+  // An iCalendar file (RFC 5545) of timed events for a calendar app to import. Times are UTC; text is
+  // escaped, and lines are folded at 75 octets with continuation lines starting with a space.
+  const icsTime = (t) => new Date(t).toISOString().replace(/\.\d{3}/, '').replace(/[-:]/g, '');
+  const icsText = (s) => String(s).replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\r?\n/g, '\\n');
+  function icsFold(line) {
+    const out = [];
+    let cur = '', octets = 0;
+    for (const ch of line) {
+      const cp = ch.codePointAt(0), n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+      if (octets + n > (out.length ? 74 : 75)) { out.push(cur); cur = ''; octets = 0; }
+      cur += ch; octets += n;
+    }
+    out.push(cur);
+    return out.join('\r\n ');
+  }
+  // events: { uid, start, end, summary, description?, alarmMinutes? }. `stamp` is when it was made.
+  function icsCalendar(events, stamp) {
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ffxi-timer//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+    for (const e of events) {
+      lines.push('BEGIN:VEVENT', `UID:${e.uid}`, `DTSTAMP:${icsTime(stamp)}`, `DTSTART:${icsTime(e.start)}`, `DTEND:${icsTime(e.end)}`, `SUMMARY:${icsText(e.summary)}`);
+      if (e.description) lines.push(`DESCRIPTION:${icsText(e.description)}`);
+      if (e.alarmMinutes != null) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(e.summary)}`, `TRIGGER:-PT${e.alarmMinutes}M`, 'END:VALARM');
+      lines.push('END:VEVENT');
+    }
+    lines.push('END:VCALENDAR');
+    return `${lines.map(icsFold).join('\r\n')}\r\n`;
+  }
+
   const Vana = {
     SEC, MIN, HOUR, DAY, WEEK, MONTH, YEAR, EPOCH, BASE_YEAR, EARTH_DAY, JST,
     ELEMENTS, DAYS, MOON_PHASES, FULL, NEW, RSE_RACES, RSE_PLACES, RSE_DUNGEONS, RSE_GEAR, RUNS, ROUTES, SHOPS, GUILDS,
-    mod, clock, dayStartOf, minuteOfDay, isDaytime, phaseOf, moonOfDay, moon, nextPhaseChange,
+    mod, clock, dayStartOf, fromVana, minuteOfDay, isDaytime, phaseOf, moonOfDay, moon, nextPhaseChange,
     rse, rseOfWeek, rseWeeks, nextJpMidnight, nextConquestTally,
     routeStatus, nextDeparture, departureMinutes, guildStatus, nextGuildOpening,
     WEATHERS, WEATHER_ELEMENT, isDoubleWeather, weatherIdsFor, useWeatherData, weatherOf, weatherZones,
-    weatherGroups, weatherTier, findWeather, weatherOdds,
-    nextDays, hourSegments, findWindows,
+    FOG, FOG_FROM, FOG_TO, isCity, hasMorningFog, weatherGroups, weatherTier, findWeather, weatherOdds,
+    nextDays, hourSegments, findWindows, icsCalendar,
   };
   if (typeof module === 'object' && module.exports) module.exports = Vana;
   else root.Vana = Vana;

@@ -22,7 +22,7 @@
   const DEFAULTS = {
     hour12: null, sound: true, starred: [], routeTab: 'airship', guildCraft: 'all', guildOpenOnly: false,
     calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
-    wxZone: 103, wxCount: 16, discord: '', wxFind: [], wxFindDays: 16,
+    wxZone: 103, wxCount: 16, discord: '', wxFind: [], wxFindDays: 16, starredZones: [], savedPlans: [],
   };
   const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
   settings.planner = { ...EMPTY_QUERY, ...settings.planner };
@@ -42,6 +42,7 @@
     if (!formats[key]) {
       const h12 = hour12();
       formats[key] = new Intl.DateTimeFormat(undefined, {
+        full: { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: h12 },
         clock: { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: h12 },
         time: { hour: 'numeric', minute: '2-digit', hour12: h12 },
         day: { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: h12 },
@@ -119,9 +120,11 @@
     jp: { valid: () => true, next: (r, t) => V.nextJpMidnight(t), label: () => 'JP midnight' },
     conquest: { valid: () => true, next: (r, t) => V.nextConquestTally(t), label: () => 'Conquest tally' },
     moon: { valid: (r) => r === '0' || r === '4', next: (r, t) => phaseStart(Number(r), t), label: (r) => `${V.MOON_PHASES[r]} begins` },
-    planner: { valid: (r) => r && typeof r === 'object', next: (q, t) => { const w = V.findWindows(t, q, 3).find((x) => x.start > t); return w ? w.start : null; }, label: () => 'Planner window opens' },
+    planner: { valid: (r) => r && typeof r === 'object', next: (q, t) => { const w = V.findWindows(t, q, 3).find((x) => x.start > t); return w ? w.start : null; }, label: (q) => `Planner: ${describeQuery(q)}` },
   };
-  const alarmId = (a) => (a.kind === 'planner' ? 'planner:' : `${a.kind}:${a.ref}`);
+  // A planner alarm is keyed by its search, so each saved search can have its own.
+  const planKey = (q) => planHash({ ...EMPTY_QUERY, ...q }).slice(1);
+  const alarmId = (a) => (a.kind === 'planner' ? `planner:${planKey(a.ref)}` : `${a.kind}:${a.ref}`);
   let alarms = load(ALARMS_KEY, []).filter((a) => a && SOURCES[a.kind] && SOURCES[a.kind].valid(a.ref));
   const runtime = new Map(); // alarm id -> { event, due } or null when the source has no next event
   let alarmGen = 0;
@@ -154,7 +157,8 @@
     const title = SOURCES[a.kind].label(a.ref);
     notify(title, `in ${countdown(event - now)} · ${vanaHM(event)} Vana'diel · ${earth(event, 'clock')} local`, alarmId(a));
     // Discord gets the Earth time as a timestamp tag, which each reader sees in their own time zone.
-    postDiscord(`**${title}** in ${countdown(event - now)} (${vanaHM(event)} Vana'diel, <t:${Math.round(event / 1000)}:T>)`);
+    // Alarms saved before the per-alarm switch have no `discord` field and keep posting.
+    if (a.discord !== false) postDiscord(`**${title}** in ${countdown(event - now)} (${vanaHM(event)} Vana'diel, <t:${Math.round(event / 1000)}:T>)`);
   }
 
   // ---- Discord ----
@@ -170,7 +174,7 @@
   }
   function wireDiscord() {
     const input = $('discord-url'), status = $('discord-status');
-    const paint = () => setText(status, settings.discord ? 'Saved. Alarms post to Discord.' : 'Not set.');
+    const paint = () => setText(status, settings.discord ? 'Saved. Alarms with Discord on post here.' : 'Not set.');
     input.value = settings.discord;
     paint();
     $('discord-save').addEventListener('click', () => {
@@ -191,15 +195,16 @@
     }
   }
   function toggleAlarm(kind, ref) {
-    const id = kind === 'planner' ? 'planner:' : `${kind}:${ref}`;
+    // The planner bell always means the search on screen.
+    if (kind === 'planner') {
+      if (isEmptyQuery(settings.planner)) { toast('Planner', 'Pick at least one condition first.'); return; }
+      ref = JSON.parse(JSON.stringify(settings.planner));
+    }
+    const id = alarmId({ kind, ref });
     const i = alarms.findIndex((a) => alarmId(a) === id);
     if (i >= 0) { alarms.splice(i, 1); runtime.delete(id); }
     else {
-      if (kind === 'planner') {
-        if (isEmptyQuery(settings.planner)) { toast('Planner', 'Pick at least one condition first.'); return; }
-        ref = JSON.parse(JSON.stringify(settings.planner));
-      }
-      alarms.push({ kind, ref, lead: settings.lead, on: true });
+      alarms.push({ kind, ref, lead: settings.lead, on: true, discord: true });
       if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(paintNotify, () => {});
     }
     saveAlarms();
@@ -399,9 +404,17 @@
     }, V.WEATHERS[id]);
   }
   // A zone box takes any spelling of a zone's name; an unknown name is flagged and leaves the setting alone.
+  // The browser only suggests zones that match what is in the box, so focusing it empties the box (the
+  // zone stays visible as the placeholder) to show the whole list; leaving without typing puts it back.
   function wireZoneInput(input, get, set, allowEmpty) {
-    input.value = ZONE_NAME.get(get()) || '';
+    const placeholder = input.placeholder, restore = () => { input.value = ZONE_NAME.get(get()) || ''; };
+    let typed = false;
+    restore();
+    input.addEventListener('focus', () => { typed = false; input.placeholder = ZONE_NAME.get(get()) || placeholder; input.value = ''; });
+    input.addEventListener('input', () => { typed = true; });
+    input.addEventListener('blur', () => { input.placeholder = placeholder; if (!typed && !input.value) restore(); });
     input.addEventListener('change', () => {
+      if (!typed && !input.value) return; // emptied by focusing, not by the user
       const text = input.value.trim(), id = ZONE_ID.get(text.toLowerCase());
       if (id != null) { input.value = ZONE_NAME.get(id); input.classList.remove('invalid'); set(id); persist(); }
       else if (!text && allowEmpty) { input.classList.remove('invalid'); set(null); persist(); }
@@ -409,7 +422,12 @@
     });
   }
   function renderWeather(now) {
-    const zone = settings.wxZone;
+    const zone = settings.wxZone, starred = settings.starredZones.includes(zone), star = $('wx-star');
+    star.hidden = !ZONE_NAME.has(zone);
+    setText(star, starred ? '★ Starred' : '☆ Star zone');
+    setClass(star, `button small star-btn${starred ? ' on' : ''}`);
+    star.setAttribute('aria-pressed', starred ? 'true' : 'false');
+    $('wx-fog').hidden = !V.hasMorningFog(zone);
     liveRows($('wx-body'), `${zone}|${settings.wxCount}|${gen}`, now, () => {
       if (!ZONE_NAME.has(zone)) return { rows: [emptyRow(6, 'Pick a zone to see its weather.')] };
       const days = V.nextDays(now, settings.wxCount);
@@ -428,6 +446,31 @@
     count.replaceChildren(...[8, 16, 32, 64].map((n) => { const o = el('option', { value: String(n), text: `${n} days` }); o.selected = n === settings.wxCount; return o; }));
     count.addEventListener('change', (e) => { settings.wxCount = +e.target.value; persist(); });
     $('wx-share').addEventListener('click', () => copyLink(`#weather&zone=${settings.wxZone}`));
+    $('wx-star').addEventListener('click', () => toggleZoneStar(settings.wxZone));
+  }
+
+  // ---- Starred zones ----
+  // Today's and tomorrow's weather for each starred zone, on the hero row and in the mini clock.
+  function toggleZoneStar(id) {
+    if (!ZONE_NAME.has(id)) return;
+    const list = settings.starredZones;
+    settings.starredZones = list.includes(id) ? list.filter((z) => z !== id) : [...list, id];
+    persist();
+  }
+  const weatherChips = (w) => [weatherChip(w.normal), ' ', weatherChip(w.common), ' ', weatherChip(w.rare)];
+  function renderStarredZones(now) {
+    const ids = settings.starredZones.filter((id) => ZONE_NAME.has(id));
+    $('zones-card').hidden = !ids.length;
+    if (!ids.length) return;
+    const today = V.clock(now).dayNumber;
+    liveRows($('zones-body'), `${ids.join(',')}|${today}|${gen}`, now, () => ({
+      expires: V.dayStartOf(today + 1),
+      rows: ids.map((id) => ({ tr: el('tr', {},
+        el('td', { class: 'c-star' }, el('button', { class: 'icon-btn on', type: 'button', 'aria-pressed': 'true', 'aria-label': `Unstar ${ZONE_NAME.get(id)}`, title: 'Unstar', onclick: () => toggleZoneStar(id) }, '★')),
+        el('td', { class: 'wrap' }, el('button', { class: 'link-btn zone-link', type: 'button', onclick: () => openForecast(id) }, ZONE_NAME.get(id))),
+        el('td', { class: 'wx-line' }, ...weatherChips(V.weatherOf(id, today))),
+        el('td', { class: 'wx-line hide-sm' }, ...weatherChips(V.weatherOf(id, today + 1)))) })),
+    }));
   }
 
   // ---- Weather finder ----
@@ -485,6 +528,7 @@
   const FINDER_SOON_ROWS = 30, FINDER_ODDS_ROWS = 15;
   function renderFinder(now) {
     const ids = settings.wxFind, key = `${ids.join(',')}|${settings.wxFindDays}|${gen}`;
+    $('wf-fog').hidden = !ids.includes(V.FOG);
     liveRows($('wf-soon'), key, now, () => {
       if (!ids.length) return { rows: [emptyRow(5, 'Click a weather anywhere on the page, or pick one above.')] };
       const found = V.findWeather(now, ids, settings.wxFindDays);
@@ -505,6 +549,43 @@
     days.addEventListener('change', (e) => { settings.wxFindDays = +e.target.value; persist(); });
     $('wf-share').addEventListener('click', () => copyLink(`#find&w=${settings.wxFind.join(',')}&days=${settings.wxFindDays}`));
     buildFinderChips();
+  }
+
+  // ---- Calendar files ----
+  // Events go out as an .ics download that any calendar app can import, each with a reminder at the
+  // default alarm warning. UIDs are stable, so importing the same events again updates them.
+  function downloadIcs(name, events) {
+    if (!events.length) { toast('Nothing to add', 'There are no events in this list.'); return; }
+    const url = URL.createObjectURL(new Blob([V.icsCalendar(events.map((e) => ({ ...e, uid: `${e.uid}@ffxi-timer`, alarmMinutes: settings.lead })), Date.now())], { type: 'text/calendar' }));
+    const a = el('a', { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Calendar file saved', `${name} has ${events.length} event${events.length === 1 ? '' : 's'}. Open it to add them to your calendar.`);
+  }
+  // A short stable tag for a planner search, for UIDs.
+  const tagOf = (s) => { let h = 5381; for (const ch of s) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); };
+  const vanaSpan = (start, end) => `${V.DAYS[V.clock(start).weekday].name} ${vanaHM(start)} to ${V.DAYS[V.clock(end - 1).weekday].name} ${vanaHM(end)} Vana'diel`;
+  function calendarEvents(now) {
+    return calendarItems(now).map((item) => {
+      if (settings.calTab === 'days') {
+        const d = V.DAYS[item.weekday];
+        return { uid: `day-${item.dayNumber}`, start: item.start, end: item.end, summary: `FFXI ${d.name}`,
+          description: `C.E. ${ceDate(item.start)}, ${item.moon.percent}% ${V.MOON_PHASES[item.moon.phase]}. ${V.ELEMENTS[d.element]} gets the day bonus, ${V.ELEMENTS[d.weak]} the penalty.` };
+      }
+      if (settings.calTab === 'moon') {
+        const a = V.moon(item.start), b = V.moon(item.end - 1);
+        return { uid: `moon-${a.phase}-${item.start}`, start: item.start, end: item.end, summary: `FFXI ${V.MOON_PHASES[a.phase]}`, description: `${a.percent}% to ${b.percent}%, ${vanaSpan(item.start, item.end)}.` };
+      }
+      const d = V.RSE_DUNGEONS[item.place], race = V.RSE_RACES[item.race], place = V.RSE_PLACES[item.place];
+      return { uid: `rse-${item.start}`, start: item.start, end: item.end, summary: `FFXI RSE: ${race} in ${place}`,
+        description: `Trade ${/^[AEIOU]/.test(d.key) ? 'an' : 'a'} ${d.key} to the Treasure Chest in ${place} for a Magical Pattern. A ??? there pops ${d.nm}, which can drop the ${V.RSE_GEAR[item.race].sachet}.` };
+    });
+  }
+  function plannerEvents(now, q) {
+    const what = describeQuery(q), tag = tagOf(planKey(q));
+    return V.findWindows(now, q, 8).map((w) => ({ uid: `plan-${tag}-${w.start}`, start: w.start, end: w.end, summary: `FFXI: ${what}`, description: `${vanaSpan(w.start, w.end)}.` }));
   }
 
   // ---- Calendars ----
@@ -590,6 +671,47 @@
         el('div', {}, el('h3', { text: 'Sachet' }),
           el('p', {}, `The same week, a ??? in ${place} pops ${d.nm} for ${race} players. It can drop the `, el('b', { text: g.sachet }), '.'))),
     ];
+  }
+
+  // ---- Converter ----
+  // One moment shown as Earth and as Vana'diel time; change either side and the other follows. Until
+  // something is typed it follows the clock, and "Now" goes back to that.
+  let convertAt = null;
+  const CV_FIELDS = ['cv-year', 'cv-month', 'cv-date', 'cv-hour', 'cv-minute'];
+  const localInput = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+  function wireConverter() {
+    $('cv-earth').addEventListener('change', (e) => {
+      const t = new Date(e.target.value).getTime(); // a date and time with no offset parses as local time
+      if (!isNaN(t)) convertAt = t;
+    });
+    CV_FIELDS.forEach((id) => $(id).addEventListener('change', () => {
+      const [year, month, date, hour, minute] = CV_FIELDS.map((f) => Number($(f).value));
+      const ok = [year, month, date, hour, minute].every(Number.isInteger) && month >= 1 && month <= 12 && date >= 1 && date <= 30 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+      CV_FIELDS.forEach((f) => $(f).classList.toggle('invalid', !ok));
+      if (ok) convertAt = V.fromVana(year, month, date, hour, minute);
+    }));
+    $('cv-now').addEventListener('click', () => { convertAt = null; CV_FIELDS.forEach((f) => $(f).classList.remove('invalid')); });
+  }
+  function renderConverter(now) {
+    const t = convertAt ?? now, c = V.clock(t), m = V.moon(t);
+    // A field being typed in is left alone.
+    const put = (id, v) => { const e = $(id); if (e !== document.activeElement && e._v !== v) { e._v = v; e.value = v; } };
+    put('cv-earth', localInput(t));
+    [c.year, c.month, c.date, c.hour, c.minute].forEach((v, i) => put(CV_FIELDS[i], String(v)));
+    const out = $('cv-out'), zones = settings.starredZones.filter((id) => ZONE_NAME.has(id));
+    const key = `${Math.floor((t - V.EPOCH) / V.MIN)}|${zones.join(',')}|${gen}`;
+    if (out._key !== key) {
+      out._key = key;
+      out._rel = el('span', { class: 'count' });
+      out.replaceChildren(
+        el('div', { class: 'cv-line' }, dayName(c.weekday), ` · C.E. ${ceDate(t)} ${pad(c.hour)}:${pad(c.minute)} · ${m.percent}% ${V.MOON_PHASES[m.phase]}`),
+        el('div', { class: 'cv-line' }, `${earth(t, 'full')} local · ${earth(t, 'jst')} JST · `, out._rel),
+        zones.length
+          ? el('div', { class: 'cv-zones' }, zones.map((id) => el('div', { class: 'cv-line' }, el('span', { class: 'muted', text: `${ZONE_NAME.get(id)} ` }), ...weatherChips(V.weatherOf(id, c.dayNumber)))))
+          : el('p', { class: 'hint', text: 'Pick a zone in the Weather panel and press ☆ Star zone to see its weather for this day here too.' }),
+      );
+    }
+    setText(out._rel, convertAt == null ? 'now' : t >= now ? `in ${countdown(t - now)}` : `${countdown(now - t)} ago`);
   }
 
   // ---- Planner ----
@@ -697,9 +819,33 @@
         class: `chip${q.weatherDouble ? ' active' : ''}`, type: 'button', 'aria-pressed': q.weatherDouble ? 'true' : 'false', title: 'Only double weather (Heat Wave, Sand Storm and so on)',
         onclick: () => { q.weatherDouble = !q.weatherDouble; persist(); buildPlanner(); },
       }, 'Double only'));
-    $('planner-presets').replaceChildren(...PRESETS.map(([name, preset]) => el('button', {
-      class: 'chip', type: 'button', onclick: () => { settings.planner = { ...EMPTY_QUERY, ...preset }; persist(); buildPlanner(); },
-    }, name)));
+  }
+  // Built-in presets, then the searches you saved, each named by what it asks for. The one on screen
+  // is highlighted.
+  function buildPlannerPresets() {
+    const current = planKey(settings.planner);
+    const use = (q) => () => { settings.planner = { ...EMPTY_QUERY, ...JSON.parse(JSON.stringify(q)) }; persist(); buildPlanner(); };
+    const chip = (name, q, extra = {}) => {
+      const on = planKey(q) === current;
+      return el('button', { class: `chip${on ? ' active' : ''}`, type: 'button', 'aria-pressed': on ? 'true' : 'false', onclick: use(q), ...extra }, name);
+    };
+    $('planner-presets').replaceChildren(
+      ...PRESETS.map(([name, preset]) => chip(name, preset)),
+      ...settings.savedPlans.map((q) => {
+        const name = describeQuery(q), label = name.length > 44 ? `${name.slice(0, 43)}…` : name;
+        return el('span', { class: 'saved-plan' }, chip(label, q, { title: name }),
+          el('button', { class: 'chip-x', type: 'button', 'aria-label': `Forget the saved search ${name}`, title: 'Forget this search',
+            onclick: () => { settings.savedPlans = settings.savedPlans.filter((s) => planKey(s) !== planKey(q)); persist(); } }, '×'));
+      }),
+    );
+  }
+  function savePlan() {
+    const q = settings.planner;
+    if (isEmptyQuery(q)) { toast('Planner', 'Pick at least one condition first.'); return; }
+    if (settings.savedPlans.some((s) => planKey(s) === planKey(q))) { toast('Already saved', describeQuery(q)); return; }
+    settings.savedPlans = [...settings.savedPlans, JSON.parse(JSON.stringify(q))];
+    persist();
+    toast('Search saved', `${describeQuery(q)}. It is with the presets above the planner.`);
   }
   function wirePlanner() {
     const q = () => settings.planner;
@@ -716,6 +862,11 @@
     wireZoneInput($('pl-zone'), () => q().zone, (id) => { q().zone = id; }, true);
     $('pl-chance').addEventListener('change', (e) => { q().weatherChance = e.target.value === 'usual' ? 'usual' : 'any'; persist(); });
     $('pl-share').addEventListener('click', () => copyLink(planHash(q())));
+    $('pl-save').addEventListener('click', savePlan);
+    $('pl-ics').addEventListener('click', () => {
+      if (isEmptyQuery(q())) { toast('Planner', 'Pick at least one condition first.'); return; }
+      downloadIcs('ffxi-planner.ics', plannerEvents(Date.now(), q()));
+    });
   }
   function plannerRow(w, now, q) {
     const tr = el('tr'), when = spanCell(tr, w.start, w.end), c = V.clock(w.start), m = V.moon(w.start);
@@ -728,7 +879,10 @@
     return { tr, update: when.update };
   }
   function renderPlanner(now) {
-    const q = settings.planner;
+    const q = settings.planner, bellSpec = `planner:${planKey(q)}`, presets = $('planner-presets');
+    if ($('pl-alarm').dataset.alarm !== bellSpec) { $('pl-alarm').dataset.alarm = bellSpec; paintBell($('pl-alarm')); }
+    const presetKey = `${bellSpec}|${JSON.stringify(settings.savedPlans)}`;
+    if (presets._key !== presetKey) { presets._key = presetKey; buildPlannerPresets(); }
     liveRows($('pl-body'), `${JSON.stringify(q)}|${gen}`, now, () => {
       if (q.weatherElements.length && q.zone == null) return { rows: [emptyRow(5, 'Pick a zone for the weather condition.')] };
       if (isEmptyQuery(q)) return { rows: [emptyRow(5, 'Pick a day, a moon phase, an hour range, a moon percent or a zone\'s weather, or start from a preset.')] };
@@ -744,10 +898,14 @@
     const lead = el('select', { class: 'select', 'aria-label': 'Minutes of warning', onchange: (e) => { a.lead = +e.target.value; runtime.delete(id); saveAlarms(); } },
       LEADS.map((n) => { const o = el('option', { value: String(n), text: `${n} min before` }); o.selected = n === a.lead; return o; }));
     const onOff = el('button', { class: 'button small', type: 'button', onclick: () => { a.on = !a.on; runtime.delete(id); saveAlarms(); } }, a.on ? 'On' : 'Off');
+    // Only offered once a webhook is saved; the list rebuilds when that setting changes.
+    const toDiscord = a.discord !== false;
+    const discord = settings.discord ? el('button', { class: 'button small', type: 'button', 'aria-pressed': toDiscord ? 'true' : 'false', title: 'Also post this alarm to the Discord webhook',
+      onclick: () => { a.discord = !toDiscord; saveAlarms(); } }, `Discord: ${toDiscord ? 'on' : 'off'}`) : null;
     const remove = el('button', { class: 'button small danger', type: 'button', 'aria-label': 'Remove alarm', onclick: () => { alarms = alarms.filter((x) => x !== a); runtime.delete(id); saveAlarms(); refreshBells(); } }, '×');
     const tr = el('tr', {},
-      el('td', { class: 'wrap' }, src.label(a.ref), a.kind === 'planner' ? el('div', { class: 'sub', text: describeQuery(a.ref) }) : null),
-      el('td', {}, lead), el('td', {}, next, nextVana), el('td', {}, inText), el('td', {}, onOff, ' ', remove));
+      el('td', { class: 'wrap' }, src.label(a.ref)),
+      el('td', {}, lead), el('td', {}, next, nextVana), el('td', {}, inText), el('td', { class: 'actions' }, onOff, discord ? ' ' : null, discord, ' ', remove));
     return { tr, update(now) {
       const r = a.on ? runtime.get(id) : null;
       setText(next, r ? earthWhen(r.event, now) : a.on ? '-' : 'off');
@@ -781,10 +939,14 @@
     setText(refs.time, `${pad(c.hour)}:${pad(c.minute)}`);
     if (refs.weekday !== c.weekday) { refs.weekday = c.weekday; refs.day.replaceChildren(dayName(c.weekday)); }
     setText(refs.moon, `${m.percent}% ${V.MOON_PHASES[m.phase]}`);
-    // Starred routes first; with none starred, the daily and weekly resets.
-    const starred = settings.starred.slice(0, 3).map((id) => ROUTE[id]).filter(Boolean);
-    const items = starred.length
-      ? starred.map((r) => { const s = V.routeStatus(r, now); return [`${short(r.from)} → ${short(r.to)}`, `${s.state === 'boarding' ? 'boarding · ' : ''}${countdown(s.departs - now)}`]; })
+    // Starred routes, then starred zones with today's usual weather, four lines at most; with nothing
+    // starred, the daily and weekly resets.
+    const routes = settings.starred.map((id) => ROUTE[id]).filter(Boolean)
+      .map((r) => { const s = V.routeStatus(r, now); return [`${short(r.from)} → ${short(r.to)}`, `${s.state === 'boarding' ? 'boarding · ' : ''}${countdown(s.departs - now)}`]; });
+    const zones = settings.starredZones.filter((id) => ZONE_NAME.has(id))
+      .map((id) => [ZONE_NAME.get(id), V.WEATHERS[V.weatherOf(id, c.dayNumber).normal]]);
+    const starred = [...routes, ...zones].slice(0, 4);
+    const items = starred.length ? starred
       : [['JP midnight', countdown(V.nextJpMidnight(now) - now)], ['Conquest tally', countdown(V.nextConquestTally(now) - now)]];
     const key = items.map((i) => i[0]).join('|');
     if (refs.key !== key) {
@@ -817,7 +979,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
   async function openMini() {
     if ('documentPictureInPicture' in window) {
       try {
-        const pip = await window.documentPictureInPicture.requestWindow({ width: 320, height: 210 });
+        const pip = await window.documentPictureInPicture.requestWindow({ width: 320, height: 230 });
         pipDoc = pip.document;
         pipDoc.title = 'ffxi-timer';
         pipDoc.head.append(el('style', { text: MINI_CSS }));
@@ -830,7 +992,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
         return;
       } catch (e) { /* fall through to a popup window */ }
     }
-    window.open(`${location.pathname}?mini`, 'ffxi-timer-mini', 'popup,width=340,height=230');
+    window.open(`${location.pathname}?mini`, 'ffxi-timer-mini', 'popup,width=340,height=250');
   }
 
   // ---- Theme ----
@@ -865,7 +1027,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     document.querySelectorAll('#cal-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === settings.calTab));
   }
   function wire() {
-    document.querySelectorAll('.bell[data-alarm]').forEach((b) => { if (!b.querySelector('svg')) b.insertAdjacentHTML('afterbegin', BELL); });
+    document.querySelectorAll('.bell[data-alarm]').forEach((b) => { if (!b.querySelector('svg')) b.insertAdjacentHTML('afterbegin', BELL); paintBell(b); });
     $('hour-toggle').addEventListener('click', () => { settings.hour12 = !hour12(); persist(); paintToolbar(); });
     $('sound-toggle').addEventListener('click', () => { settings.sound = !settings.sound; persist(); paintToolbar(); unlockAudio(); if (settings.sound) chime(); });
     $('mini-button').addEventListener('click', openMini);
@@ -877,6 +1039,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     $('about-button').addEventListener('click', () => $('about-dialog').showModal());
     $('route-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) { settings.routeTab = b.dataset.tab; persist(); paintToolbar(); } });
     $('cal-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) { settings.calTab = b.dataset.tab; persist(); paintToolbar(); buildCalendarControls(); } });
+    $('cal-ics').addEventListener('click', () => downloadIcs(`ffxi-${settings.calTab}.ics`, calendarEvents(Date.now())));
     const lead = $('lead-default');
     lead.replaceChildren(...LEADS.map((n) => { const o = el('option', { value: String(n), text: `${n} min before` }); o.selected = n === settings.lead; return o; }));
     lead.addEventListener('change', (e) => { settings.lead = +e.target.value; persist(); });
@@ -892,6 +1055,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     wirePlanner();
     wireWeather();
     wireFinder();
+    wireConverter();
     wireDiscord();
     window.addEventListener('hashchange', () => openTarget(applyHash(location.hash)));
   }
@@ -911,7 +1075,8 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     if (miniMode) { renderMini(now); return; }
     checkAlarms(now);
     if (!document.hidden) {
-      renderHero(now); renderRoutes(now); renderGuilds(now); renderWeather(now); renderFinder(now); renderCalendar(now); renderPlanner(now); renderAlarms(now);
+      renderHero(now); renderStarredZones(now); renderRoutes(now); renderGuilds(now); renderWeather(now); renderFinder(now);
+      renderCalendar(now); renderConverter(now); renderPlanner(now); renderAlarms(now);
     }
     if (mini) renderMini(now);
   }
