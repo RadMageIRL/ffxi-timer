@@ -2,6 +2,13 @@
 
 Every version of ffxi-timer and what changed in it, newest first. Dates are the day I released each one.
 
+## v0.8 (2026-10-22)
+
+Added
+- Kill times for NMs. **Killed** on an NM with a timer records its time of death, and its next chance then waits for its respawn timer or lockout before its conditions count. The time can be edited, × clears it, and **Clear kill times** clears them all. NM alarms follow the timer too.
+- An Elemental magic panel. Pick an element and a zone to see what the day and the weather do to that element's magic today and for the next 16 days, with each weather's effect, and when the element's day and its double weather next line up for +35%. Where that can't happen, it shows the best the zone can do and when.
+- A Timers panel for lockouts, with LandSandBoat's default waits: Dynamis, ENM key items, Assault ID tags, the Hunt Registry, Fields and Grounds of Valor pages, ISNM orders, ACP, AMK and ASA keys, Garrison, the conquest EXP ring, weekly quests, and custom timers in hours. Each can have an alarm; its start time can be edited, × removes one, and **Clear all** removes them all.
+
 ## v0.7 (2026-10-22)
 
 Added

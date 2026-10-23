@@ -161,6 +161,7 @@ h1::after { content: "_"; color: var(--accent); animation: blink 1.15s steps(1) 
 }
 .num { width: 64px; border-radius: 5px; }
 .num.short { width: 52px; }
+select.select { max-width: calc(100vw - 64px); } /* a long option must not widen the page on phones */
 .select[type="datetime-local"] { border-radius: 5px; }
 .select:hover, .num:hover { border-color: var(--accent); }
 
@@ -365,6 +366,15 @@ kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-
 /* ---- Notorious monsters ---- */
 .grid.nms td { vertical-align: top; line-height: 1.55; }
 .grid.nms td .sub { display: block; }
+.kill-time { width: 200px; border-radius: 5px; }
+
+/* ---- Elemental magic ---- */
+#magic-elements { margin: 2px 0 6px; }
+.magic-now { margin: 8px 0 6px; }
+.fx { font-size: 11px; color: var(--muted); }
+.fx.up { color: var(--ok); }
+.fx.down { color: var(--danger); }
+.grid.magic td.best .fx { font-size: 13px; font-weight: 700; }
 
 /* ---- Vana theme extras ---- */
 [data-theme="vana"] body {

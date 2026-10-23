@@ -21,13 +21,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
-  <title>FFXI Timer v0.7 - Vana'diel clock, ships and guilds</title>
+  <title>FFXI Timer v0.8 - Vana'diel clock, ships and guilds</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app" id="app">
     <header class="topbar">
-      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.7 · vana'diel clock · ships · guilds · alarms</span></div>
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.8 · vana'diel clock · ships · guilds · alarms</span></div>
       <nav class="toolbar" aria-label="Controls">
         <div class="tabs view-tabs" id="view-tabs" role="group" aria-label="View">
           <button type="button" data-view="full" aria-pressed="true" title="Every panel">Full</button>
@@ -234,6 +234,28 @@
       </div>
     </section>
 
+    <section class="panel" id="magic-panel" aria-labelledby="magic-title">
+      <div class="panel-head">
+        <h2 id="magic-title">Elemental magic</h2>
+        <div class="option-group">
+          <input class="select zone-input" id="magic-zone" list="zone-list" placeholder="Zone" aria-label="Zone for elemental magic" autocomplete="off" spellcheck="false">
+          <button class="button small" id="magic-share" type="button" title="Copy a link that opens this element and zone">Copy link</button>
+        </div>
+      </div>
+      <div class="chips" id="magic-elements"></div>
+      <p class="hint">Day and weather raise or lower elemental magic damage. The element's weather adds 10%, or 25% if it is double weather, and its day adds 10%; the opposing element's weather and day take the same off, and the total stops at +40%. Without an obi this happens on about a third of casts. The element's obi makes every cast get the bonuses, and Hachirin-no-Obi makes every cast get the bonuses and the penalties.</p>
+      <dl class="facts magic-now">
+        <div><dt>Today</dt><dd id="magic-now">-</dd></div>
+        <div><dt id="magic-best-label">Next +35%</dt><dd id="magic-best">-</dd></div>
+      </dl>
+      <div class="table-wrap">
+        <table class="grid magic">
+          <thead><tr><th>Vana'diel day</th><th class="hide-sm">Starts</th><th>In</th><th>Day</th><th>Usual</th><th>Common</th><th>Rare</th><th>Best</th></tr></thead>
+          <tbody id="magic-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel" id="calendar-panel" aria-labelledby="calendar-title">
       <div class="panel-head">
         <h2 id="calendar-title">Calendars</h2>
@@ -350,12 +372,33 @@
     <section class="panel" id="nm-panel" aria-labelledby="nm-title">
       <div class="panel-head">
         <h2 id="nm-title">Notorious monsters</h2>
+        <button class="button small" id="nm-clear" type="button" title="Clear every kill time" hidden>Clear kill times</button>
       </div>
-      <p class="hint">These NMs can only appear at certain hours, under a certain moon or in certain weather. A weather day is a day that weather can come up; the game moves among the day's three weathers, so it may not. A lottery NM takes its placeholder's place by chance when the placeholder respawns after a kill.</p>
+      <p class="hint">These NMs can only appear at certain hours, under a certain moon or in certain weather. A weather day is a day that weather can come up; the game moves among the day's three weathers, so it may not. A lottery NM takes its placeholder's place by chance when the placeholder respawns after a kill. Press Killed when one dies and its next chance waits for its timer.</p>
       <div class="table-wrap">
         <table class="grid nms">
-          <thead><tr><th>NM</th><th>Zone</th><th>Needs</th><th class="hide-sm">Pops</th><th>Next</th><th>In</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
+          <thead><tr><th>NM</th><th>Zone</th><th>Needs</th><th class="hide-sm">Pops</th><th>Next</th><th>In</th><th>Killed</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
           <tbody id="nm-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="timer-panel" aria-labelledby="timer-title">
+      <div class="panel-head">
+        <h2 id="timer-title">Timers</h2>
+        <div class="option-group">
+          <select class="select" id="timer-kind" aria-label="Kind of timer"></select>
+          <input class="num" id="timer-hours" type="number" min="0.1" step="0.1" placeholder="hours" aria-label="Hours the custom timer lasts" hidden>
+          <input class="select" id="timer-label" type="text" placeholder="Note (optional)" aria-label="Note for the timer" autocomplete="off">
+          <button class="button small" id="timer-add" type="button">Start now</button>
+          <button class="button small" id="timer-clear" type="button" title="Remove every timer" hidden>Clear all</button>
+        </div>
+      </div>
+      <p class="hint">Start a timer when you do something you can only do again later; change its start time if you started it late. These are LandSandBoat's default waits; if your server uses others, pick Custom and enter the hours.</p>
+      <div class="table-wrap">
+        <table class="grid timers">
+          <thead><tr><th>Timer</th><th>Started</th><th>Ready</th><th>In</th><th class="c-bell"><span class="sr-only">Alarm</span></th><th><span class="sr-only">Remove</span></th></tr></thead>
+          <tbody id="timer-body"></tbody>
         </table>
       </div>
     </section>
@@ -398,7 +441,7 @@
 
   <dialog class="about" id="about-dialog" aria-labelledby="about-title">
     <form method="dialog" class="about-body">
-      <h2 id="about-title">ffxi-timer v0.7</h2>
+      <h2 id="about-title">ffxi-timer v0.8</h2>
       <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from the Earth clock; nothing is fetched and nothing leaves the browser.</p>
       <h3>What it shows</h3>
       <ul>
@@ -415,6 +458,9 @@
         <li>A weather forecast for 218 zones, and weather as a planner condition; press Star zone to keep a zone's weather for today and tomorrow at the top and in the mini clock</li>
         <li>A weather finder: click any weather to see which zones are most likely to have it and when</li>
         <li>41 notorious monsters that only appear at certain hours, under a certain moon or in certain weather: what each one needs, how it pops, and when it can next appear, with an alarm</li>
+        <li>Kill times for timed NMs: press Killed and the NM's next chance waits for its timer</li>
+        <li>Elemental magic: an element's day and weather effects in a zone, today and for the next 16 days, and when +35% next comes</li>
+        <li>Timers for lockouts such as Dynamis, ENM key items and Assault tags, or any number of hours, with alarms</li>
         <li>Fishing for 100 fish: where each one bites, the baits and lures that hook it, and when the best fishing moon next comes with rain or a squall at each spot</li>
         <li>Copy link buttons that share a planner search, a zone's forecast or a weather finder search</li>
         <li>Alarms with browser notifications, a chime and optional Discord posts you can switch per alarm, and a mini clock that stays on top of the game window (Chrome and Edge)</li>

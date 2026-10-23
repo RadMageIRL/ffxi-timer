@@ -10,6 +10,23 @@
   const GUILD = Object.fromEntries(V.SHOPS.map((g) => [guildKey(g), g]));
   const nmKey = (nm) => `${nm.name}|${nm.zoneId}`; // two NMs can share a name in different zones
   const NM = new Map(V.nmList().map((nm) => [nmKey(nm), nm]));
+  // How long an NM waits after it dies, in seconds: its respawn timer or lockout, or for a lottery NM
+  // its cooldown. Null when nothing times it.
+  function nmWait(nm) {
+    if (nm.respawn) return nm.respawn;
+    return nm.lottery && nm.lottery.cooldown ? { min: nm.lottery.cooldown, max: nm.lottery.cooldown } : null;
+  }
+  // When an NM marked killed can next appear, at the earliest; null when no kill time is set.
+  function nmReady(nm) {
+    const kill = settings.nmKills[nmKey(nm)], wait = nmWait(nm);
+    return kill != null && wait ? kill + wait.min * 1000 : null;
+  }
+  // The next chance after t: the first time its conditions hold once its timer is done.
+  function nmNext(nm, t) {
+    const ready = nmReady(nm), from = ready && ready > t ? ready : t;
+    const [w] = V.findWindows(from, V.nmQuery(nm), 1);
+    return w ? { start: Math.max(w.start, from), end: w.end } : null;
+  }
   const shopName = (g) => (g.kind === 'guild' ? `${g.craft} guild` : `${g.craft} shop`);
   const miniMode = document.documentElement.classList.contains('mini-mode');
 
@@ -26,6 +43,7 @@
     calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
     wxZone: 103, wxCount: 16, discord: '', wxFind: [], wxFindDays: 16, starredZones: [], savedPlans: [],
     view: 'full', tripFrom: 'Port Bastok', tripTo: 'Kazham', tripTransfer: 1, fishId: 4401, // Moat Carp
+    nmKills: {}, magicElement: 'fire', magicZone: 103, timers: [], timerKind: 'dynamis',
   };
   const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
   settings.planner = { ...EMPTY_QUERY, ...settings.planner };
@@ -124,7 +142,16 @@
     conquest: { valid: () => true, next: (r, t) => V.nextConquestTally(t), label: () => 'Conquest tally' },
     moon: { valid: (r) => r === '0' || r === '4', next: (r, t) => phaseStart(Number(r), t), label: (r) => `${V.MOON_PHASES[r]} begins` },
     planner: { valid: (r) => r && typeof r === 'object', next: (q, t) => { const w = V.findWindows(t, q, 3).find((x) => x.start > t); return w ? w.start : null; }, label: (q) => `Planner: ${describeQuery(q)}` },
-    nm: { valid: (r) => NM.has(r), next: (r, t) => { const w = V.findWindows(t, V.nmQuery(NM.get(r)), 3).find((x) => x.start > t); return w ? w.start : null; }, label: (r) => `${NM.get(r).name} can appear` },
+    nm: {
+      valid: (r) => NM.has(r),
+      next: (r, t) => { let n = nmNext(NM.get(r), t); if (n && n.start <= t) n = nmNext(NM.get(r), n.end); return n ? n.start : null; },
+      label: (r) => `${NM.get(r).name} can appear`,
+    },
+    timer: {
+      valid: (r) => !!timerOf(r),
+      next: (r, t) => { const x = timerOf(r), ready = x && timerReadyAt(x); return ready > t ? ready : null; },
+      label: (r) => `${timerName(timerOf(r))} is ready`,
+    },
   };
   // A planner alarm is keyed by its search, so each saved search can have its own.
   const planKey = (q) => planHash({ ...EMPTY_QUERY, ...q }).slice(1);
@@ -618,6 +645,58 @@
     buildFinderChips();
   }
 
+  // ---- Elemental magic ----
+  // An element's day and weather effects in one zone: today, the next day its day and its double
+  // weather can line up (+35%), and the next 16 days.
+  const ELEMENT_DAY = Object.fromEntries(V.DAYS.map((d, i) => [d.element, i]));
+  const fx = (n) => el('span', { class: `fx${n > 0 ? ' up' : n < 0 ? ' down' : ''}`, text: n ? `${n > 0 ? '+' : ''}${n}%` : '' });
+  const doubleWeatherOf = (element) => V.WEATHERS.findIndex((_, id) => V.WEATHER_ELEMENT[id] === element && V.isDoubleWeather(id));
+  function buildMagicElements() {
+    $('magic-elements').replaceChildren(...ELEMENT_KEYS.map((k) => {
+      const on = settings.magicElement === k;
+      return el('button', { class: `chip el${on ? ' active' : ''}`, type: 'button', style: `--c: var(--${k})`, 'aria-pressed': on ? 'true' : 'false',
+        onclick: () => { settings.magicElement = k; persist(); buildMagicElements(); } }, V.ELEMENTS[k]);
+    }));
+  }
+  function magicRow(element, zoneId, d) {
+    const tr = el('tr'), when = spanCell(tr, d.start, d.end), m = V.magicDay(element, zoneId, d.dayNumber);
+    tr.append(el('td', {}, dayName(d.weekday)), el('td', { class: 'hide-sm', text: earthWhen(d.start, Date.now()) }), when.td, el('td', {}, fx(m.day)),
+      ...m.slots.map((s) => el('td', { class: 'wx-line' }, weatherChip(s.id), ' ', fx(s.effect))), el('td', { class: 'best' }, fx(m.best)));
+    return { tr, update: when.update };
+  }
+  function renderMagic(now) {
+    const element = settings.magicElement, zone = settings.magicZone, today = V.clock(now).dayNumber;
+    if (!ZONE_NAME.has(zone)) {
+      setText($('magic-now'), '-'); setText($('magic-best'), '-');
+      liveRows($('magic-body'), `none|${gen}`, now, () => ({ rows: [emptyRow(8, 'Pick a zone.')] }));
+      return;
+    }
+    const m = V.magicDay(element, zone, today), signed = (n) => `${n > 0 ? '+' : ''}${n}%`;
+    const range = m.best === m.worst ? (m.best ? signed(m.best) : 'no change') : `${signed(m.worst)} to ${signed(m.best)}`;
+    setText($('magic-now'), `${V.DAYS[V.mod(today, 8)].name}: ${m.day ? `${signed(m.day)} from the day` : 'no effect from the day'}; ${range} with today's weathers`);
+    const body = $('magic-body');
+    liveRows(body, `${element}|${zone}|${today}|${gen}`, now, () => {
+      const double = doubleWeatherOf(element), [best] = V.findWindows(now, { weekdays: [ELEMENT_DAY[element]], zone, weatherIds: [double] }, 1);
+      if (best) body._best = { ...best, text: `${V.WEATHERS[double]} is ${TIERS[V.weatherTier(V.weatherOf(zone, V.clock(best.start).dayNumber), [double])].toLowerCase()} that day` };
+      else {
+        // No +35% here. One 2,160-day weather cycle holds every weekday and weather pairing this zone
+        // has (2,160 is a multiple of 8), so the best day in it is the best this zone can do.
+        let top = -Infinity, at = null;
+        for (let n = today; n < today + 2160; n++) { const b = V.magicDay(element, zone, n).best; if (b > top) { top = b; at = n; } }
+        body._best = { start: V.dayStartOf(at), end: V.dayStartOf(at + 1), label: top, text: `the best here; never +35% in ${ZONE_NAME.get(zone)}` };
+      }
+      return { expires: V.dayStartOf(today + 1), rows: V.nextDays(now, 16).map((d) => magicRow(element, zone, d)) };
+    });
+    const b = body._best;
+    $('magic-best-label').textContent = b.label == null ? 'Next +35%' : `Next ${signed(b.label)}`;
+    setText($('magic-best'), `${V.DAYS[V.clock(b.start).weekday].name} ${earthWhen(b.start, now)}, ${now >= b.start ? `now, ends in ${countdown(b.end - now)}` : `in ${countdown(b.start - now)}`} (${b.text})`);
+  }
+  function wireMagic() {
+    wireZoneInput($('magic-zone'), () => settings.magicZone, (id) => { settings.magicZone = id; });
+    $('magic-share').addEventListener('click', () => copyLink(`#magic&e=${settings.magicElement}&zone=${settings.magicZone}`));
+    buildMagicElements();
+  }
+
   // ---- Calendar files ----
   // Events go out as an .ics download that any calendar app can import, each with a reminder at the
   // default alarm warning. UIDs are stable, so importing the same events again updates them.
@@ -842,6 +921,12 @@
       persist();
       return 'finder-panel';
     }
+    if (p.has('magic') && ELEMENT_KEYS.includes(p.get('e'))) {
+      settings.magicElement = p.get('e');
+      if (ZONE_NAME.has(Number(p.get('zone')))) settings.magicZone = Number(p.get('zone'));
+      persist();
+      return 'magic-panel';
+    }
     if (p.has('fish') && FISH_NAME.has(Number(p.get('f')))) {
       settings.fishId = Number(p.get('f'));
       persist();
@@ -1064,9 +1149,33 @@
     if (q.phases.length < 5) return q.phases.map((p) => V.MOON_PHASES[p]).join(' or ');
     return `any moon but ${V.MOON_PHASES.filter((_, p) => !q.phases.includes(p)).join(' or ')}`;
   }
+  function setKill(nm, t) {
+    const key = nmKey(nm);
+    if (t == null) delete settings.nmKills[key]; else settings.nmKills[key] = t;
+    runtime.delete(`nm:${key}`); // its alarm re-arms from the new time
+    persist();
+  }
+  // Kill time controls: Killed marks it now; once set, the time can be edited or cleared.
+  function killCell(nm, kill, wait) {
+    const td = el('td', { class: 'nm-kill' }), status = el('div', { class: 'sub' });
+    if (!wait) return { td: el('td', { class: 'muted', text: '-' }) };
+    if (kill == null) {
+      td.append(el('button', { class: 'button small', type: 'button', title: 'Mark it killed now; its next chance then waits for its timer', onclick: () => setKill(nm, Date.now()) }, 'Killed'));
+      return { td };
+    }
+    td.append(
+      el('input', { class: 'select kill-time', type: 'datetime-local', step: '60', value: localInput(kill), 'aria-label': `When ${nm.name} was killed`,
+        onchange: (e) => { const t = new Date(e.target.value).getTime(); if (!isNaN(t)) setKill(nm, t); } }),
+      ' ', el('button', { class: 'button small danger', type: 'button', 'aria-label': `Clear ${nm.name}'s kill time`, title: 'Clear the kill time', onclick: () => setKill(nm, null) }, '×'), status);
+    const first = kill + wait.min * 1000, last = kill + wait.max * 1000;
+    return { td, update(now) {
+      setText(status, now >= last ? 'timer done' : now >= first ? `timer may be done; at the latest in ${countdown(last - now)}`
+        : wait.max > wait.min ? `timer done in ${countdown(first - now)} to ${countdown(last - now)}` : `timer done in ${countdown(first - now)}`);
+    } };
+  }
   function nmRow(nm, now) {
-    const q = V.nmQuery(nm), fog = V.isFogOnly(nm), [w] = V.findWindows(now, q, 1);
-    const tr = el('tr'), when = w ? spanCell(tr, w.start, w.end) : null, c = w ? V.clock(w.start) : null;
+    const q = V.nmQuery(nm), fog = V.isFogOnly(nm), w = nmNext(nm, now), wait = nmWait(nm), kill = settings.nmKills[nmKey(nm)];
+    const tr = el('tr'), when = w ? spanCell(tr, w.start, w.end) : null, c = w ? V.clock(w.start) : null, k = killCell(nm, kill, wait);
     const needs = [hoursText(fog ? q.hours : nm.hours), moonText(q), nm.weekday == null ? '' : V.DAYS[nm.weekday].name].filter(Boolean).join(' · ');
     let next = el('span', { class: 'muted', text: 'never' });
     if (w) {
@@ -1082,15 +1191,81 @@
       el('td', { class: 'wrap' }, ZONE_NAME.has(nm.zoneId) ? el('button', { class: 'link-btn zone-link', type: 'button', onclick: () => openForecast(nm.zoneId) }, nm.zone) : nm.zone),
       el('td', { class: 'wrap' }, needs || null, needs && nm.weather ? ' · ' : null, ...(nm.weather || []).flatMap((id, i) => [i ? ' ' : null, weatherChip(id)])),
       el('td', { class: 'wrap sub hide-sm', text: popsText(nm) }),
-      el('td', { class: 'wrap' }, next), when ? when.td : el('td', { text: '-' }),
+      el('td', { class: 'wrap' }, next), when ? when.td : el('td', { text: '-' }), k.td,
       el('td', { class: 'c-bell' }, bell(`nm:${nmKey(nm)}`, `Alarm when ${nm.name} can next appear`)));
-    return { tr, update: when ? when.update : null, start: w ? w.start : Infinity, end: w ? w.end : Infinity };
+    return { tr, update(n) { when?.update(n); k.update?.(n); }, start: w ? w.start : Infinity, end: w ? w.end : Infinity };
   }
   function renderNms(now) {
+    $('nm-clear').hidden = !Object.keys(settings.nmKills).length;
     liveRows($('nm-body'), `${gen}`, now, () => {
       const rows = [...NM.values()].map((nm) => nmRow(nm, now)).sort((a, b) => a.start - b.start);
-      return { rows: rows.length ? rows : [emptyRow(7, 'No NMs loaded.')], expires: Math.min(...rows.map((r) => r.end)) };
+      return { rows: rows.length ? rows : [emptyRow(8, 'No NMs loaded.')], expires: Math.min(...rows.map((r) => r.end)) };
     });
+  }
+  function wireNms() {
+    $('nm-clear').addEventListener('click', () => {
+      for (const key of Object.keys(settings.nmKills)) runtime.delete(`nm:${key}`);
+      settings.nmKills = {};
+      persist();
+    });
+  }
+
+  // ---- Personal timers ----
+  // Each timer the player started: its kind, an optional note, when it started and when it ends.
+  const TIMER_KIND = Object.fromEntries(V.TIMER_KINDS.map((k) => [k.id, k]));
+  const RULE_TEXT = { jp: 'after the next JP midnight', vana: "after the next Vana'diel midnight", tally: 'after the conquest tally' };
+  const ruleText = (k) => (k.rule === 'hours' ? (k.hours ? `${k.hours} hours` : 'hours you choose') : RULE_TEXT[k.rule]);
+  function timerOf(id) { return settings.timers.find((x) => x.id === id) || null; }
+  function timerReadyAt(x) { const k = TIMER_KIND[x.kind]; return V.timerReady(k.rule, x.start, k.id === 'custom' ? x.hours : k.hours); }
+  function timerName(x) { return x ? `${TIMER_KIND[x.kind].name}${x.label ? ` (${x.label})` : ''}` : 'Timer'; }
+  // Removing a timer removes its alarm too.
+  function removeTimers(ids) {
+    settings.timers = settings.timers.filter((x) => !ids.includes(x.id));
+    alarms = alarms.filter((a) => !(a.kind === 'timer' && ids.includes(a.ref)));
+    for (const id of ids) runtime.delete(`timer:${id}`);
+    saveAlarms();
+    persist();
+    refreshBells();
+  }
+  function timerRow(x, now) {
+    const k = TIMER_KIND[x.kind], ready = timerReadyAt(x), tr = el('tr'), inText = el('span', { class: 'count' }), chip = el('span', { class: 'state open', text: 'Ready' });
+    tr.append(
+      el('td', { class: 'wrap' }, el('strong', { text: k.name }), x.label ? el('div', { class: 'sub', text: x.label }) : null, el('div', { class: 'sub', text: ruleText(k.id === 'custom' ? { ...k, hours: x.hours } : k) })),
+      el('td', {}, el('input', { class: 'select kill-time', type: 'datetime-local', step: '60', value: localInput(x.start), 'aria-label': `When ${timerName(x)} started`,
+        onchange: (e) => { const t = new Date(e.target.value).getTime(); if (!isNaN(t)) { x.start = t; runtime.delete(`timer:${x.id}`); persist(); } } })),
+      el('td', {}, earthWhen(ready, now), el('div', { class: 'sub', text: `${vanaHM(ready)} Vana'diel` })),
+      el('td', {}, chip, inText),
+      el('td', { class: 'c-bell' }, bell(`timer:${x.id}`, `Alarm when ${timerName(x)} is ready`)),
+      el('td', {}, el('button', { class: 'button small danger', type: 'button', 'aria-label': `Remove ${timerName(x)}`, title: 'Remove this timer', onclick: () => removeTimers([x.id]) }, '×')));
+    return { tr, ready, update(n) {
+      const done = n >= ready;
+      chip.hidden = !done;
+      tr.classList.toggle('live', done);
+      setText(inText, done ? '' : countdown(ready - n));
+    } };
+  }
+  function renderTimers(now) {
+    $('timer-clear').hidden = !settings.timers.length;
+    $('timer-hours').hidden = settings.timerKind !== 'custom';
+    liveRows($('timer-body'), `${gen}`, now, () => {
+      const rows = settings.timers.map((x) => timerRow(x, now)).sort((a, b) => a.ready - b.ready);
+      return { rows: rows.length ? rows : [emptyRow(6, 'No timers. Pick one above and press Start now when you do it.')] };
+    });
+  }
+  function wireTimers() {
+    const kindSelect = $('timer-kind');
+    kindSelect.replaceChildren(...V.TIMER_KINDS.map((k) => { const o = el('option', { value: k.id, text: `${k.name} (${ruleText(k)})` }); o.selected = k.id === settings.timerKind; return o; }));
+    kindSelect.addEventListener('change', (e) => { settings.timerKind = e.target.value; persist(); });
+    $('timer-add').addEventListener('click', () => {
+      const kind = settings.timerKind, hours = Number($('timer-hours').value);
+      if (kind === 'custom' && !(hours > 0)) { $('timer-hours').classList.add('invalid'); toast('Custom timer', 'Enter how many hours it lasts.'); return; }
+      $('timer-hours').classList.remove('invalid');
+      const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      settings.timers = [...settings.timers, { id, kind, label: $('timer-label').value.trim(), start: Date.now(), ...(kind === 'custom' ? { hours } : {}) }];
+      $('timer-label').value = '';
+      persist();
+    });
+    $('timer-clear').addEventListener('click', () => removeTimers(settings.timers.map((x) => x.id)));
   }
 
   // ---- Alarm list ----
@@ -1334,6 +1509,9 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     wireTrips();
     wireConverter();
     wireFishing();
+    wireNms();
+    wireMagic();
+    wireTimers();
     wireDiscord();
     window.addEventListener('hashchange', () => openTarget(applyHash(location.hash)));
   }
@@ -1345,6 +1523,8 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     buildFinderChips();
     $('wx-zone').value = ZONE_NAME.get(settings.wxZone) || '';
     $('fish-pick').value = FISH_NAME.get(settings.fishId) || '';
+    $('magic-zone').value = ZONE_NAME.get(settings.magicZone) || '';
+    buildMagicElements();
     $('wf-days').value = String(settings.wxFindDays);
     tick();
     requestAnimationFrame(() => $(id).scrollIntoView({ block: 'start' }));
@@ -1358,8 +1538,8 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
       renderHero(now); renderStarredZones(now);
       if (settings.view === 'simple') renderSimple(now);
       else {
-        renderRoutes(now); renderTrips(now); renderGuilds(now); renderWeather(now); renderFinder(now);
-        renderCalendar(now); renderConverter(now); renderPlanner(now); renderFishing(now); renderNms(now); renderAlarms(now);
+        renderRoutes(now); renderTrips(now); renderGuilds(now); renderWeather(now); renderFinder(now); renderMagic(now);
+        renderCalendar(now); renderConverter(now); renderPlanner(now); renderFishing(now); renderNms(now); renderTimers(now); renderAlarms(now);
       }
     }
     if (mini) renderMini(now);

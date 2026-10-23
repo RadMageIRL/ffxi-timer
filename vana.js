@@ -458,6 +458,55 @@
     return fishingData.spots.filter((s) => s[4].includes(id)).map(([zoneId, zone, area, difficulty]) => ({ zoneId, zone, area, difficulty }));
   }
 
+  // ---- Personal timers ----
+  // Lockouts as LandSandBoat's default settings set them. A rule says when one that started at
+  // `start` ends: a number of Earth hours later, or at the next JP midnight, Vana'diel midnight or
+  // conquest tally. Dynamis counts JP midnights (DYNA_MIDNIGHT_RESET), so it opens after the next one.
+  const TIMER_KINDS = [
+    { id: 'dynamis', name: 'Dynamis', rule: 'jp' },
+    { id: 'enm', name: 'ENM key item', rule: 'hours', hours: 120 },
+    { id: 'assault', name: 'Assault ID tag', rule: 'hours', hours: 24 },
+    { id: 'hunt', name: 'Hunt Registry', rule: 'vana' },
+    { id: 'regime', name: 'Fields or Grounds of Valor page', rule: 'vana' },
+    { id: 'isnm', name: 'ISNM order', rule: 'jp' },
+    { id: 'keys', name: 'ACP, AMK or ASA key', rule: 'jp' },
+    { id: 'garrison', name: 'Garrison', rule: 'tally' },
+    { id: 'ring', name: 'Conquest EXP ring', rule: 'tally' },
+    { id: 'weekly', name: 'Weekly quest', rule: 'tally' },
+    { id: 'custom', name: 'Custom', rule: 'hours' },
+  ];
+  function timerReady(rule, start, hours = 0) {
+    if (rule === 'hours') return start + hours * 3600000;
+    if (rule === 'jp') return nextJpMidnight(start);
+    if (rule === 'vana') return clock(start).dayStart + DAY;
+    if (rule === 'tally') return nextConquestTally(start);
+    return null;
+  }
+
+  // ---- Elemental magic ----
+  // Day and weather change elemental magic damage (damage_spell.lua calculateDayAndWeather): the
+  // element's single weather adds 10% and its double weather 25%, its day adds 10%; the opposed
+  // element's weathers take off 10% and 25% and its day 10%; the total is capped at +40%. Each is
+  // checked on a third of casts, on every cast with the element's obi (bonuses only), and on every
+  // cast with Hachirin-no-Obi (bonuses and penalties).
+  const OPPOSED = { fire: 'water', ice: 'fire', wind: 'ice', earth: 'wind', lightning: 'earth', water: 'lightning', light: 'dark', dark: 'light' };
+  const MAGIC_CAP = 40, MAGIC_ROLL = 33;
+  function weatherEffect(element, weatherId) {
+    const e = WEATHER_ELEMENT[weatherId], double = isDoubleWeather(weatherId);
+    return e === element ? (double ? 25 : 10) : e && e === OPPOSED[element] ? (double ? -25 : -10) : 0;
+  }
+  function dayEffect(element, weekday) {
+    const day = DAYS[weekday].element;
+    return day === element ? 10 : day === OPPOSED[element] ? -10 : 0;
+  }
+  // A day's effect in a zone: the day's part, each weather slot's part, and the best and worst totals.
+  function magicDay(element, zoneId, dayNumber) {
+    const day = dayEffect(element, mod(dayNumber, 8)), w = weatherOf(zoneId, dayNumber);
+    const slots = w ? [w.normal, w.common, w.rare].map((id) => ({ id, effect: weatherEffect(element, id) })) : [];
+    const effects = slots.length ? slots.map((s) => s.effect) : [0];
+    return { day, slots, best: Math.min(MAGIC_CAP, day + Math.max(...effects)), worst: day + Math.min(...effects) };
+  }
+
   // ---- Notorious monsters ----
   // NMs that can only appear at certain hours, under a certain moon or in certain weather, from
   // nm-data.js. The moons the server checks (xi.moonCycle, scripts/utils/common.lua) use the same
@@ -585,6 +634,7 @@
     FOG, FOG_FROM, FOG_TO, isCity, hasMorningFog, weatherGroups, weatherTier, findWeather, weatherOdds,
     fishingMoon, fishingMoonOfDay, FISH_MOON, FISH_MOON_CITY, FISH_MOON_BEST, FISH_WEATHER, BITE_WAIT, BITE_HOURS,
     bestFishingMoons, useFishingData, fishList, fishOf, fishSpots, MOON_CYCLE_PHASE, useNmData, nmList, nmQuery, isFogOnly,
+    OPPOSED, MAGIC_CAP, MAGIC_ROLL, weatherEffect, dayEffect, magicDay, TIMER_KINDS, timerReady,
     nextDays, hourSegments, findWindows, icsCalendar,
   };
   if (typeof module === 'object' && module.exports) module.exports = Vana;

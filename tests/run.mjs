@@ -574,6 +574,50 @@ test("Agas's moon list is every moon but New Moon", () => {
   assert.deepEqual(V.nmQuery(nmNamed('Agas')).phases, [1, 2, 3, 4, 5, 6, 7]);
 });
 
+// ---- Personal timers ----
+const kind = (id) => V.TIMER_KINDS.find((k) => k.id === id);
+test("timer waits are LandSandBoat's defaults: ENM key items 120 hours, an Assault tag 24", () => {
+  // settings/default/main.lua ENM_COOLDOWN = 120; assault/npc_handler.lua 86400 seconds a tag.
+  assert.deepEqual([kind('enm').hours, kind('assault').hours], [120, 24]);
+  assert.equal(V.timerReady('hours', Date.UTC(2026, 9, 22, 12), 120), Date.UTC(2026, 9, 27, 12));
+});
+test('Dynamis entered at any time on a JST day opens again at the next JP midnight', () => {
+  // 2026-10-22 14:59 UTC is 23:59 JST; one minute later is the next JST day.
+  assert.equal(V.timerReady(kind('dynamis').rule, Date.UTC(2026, 9, 22, 14, 59)), Date.UTC(2026, 9, 22, 15));
+  assert.equal(V.timerReady(kind('dynamis').rule, Date.UTC(2026, 9, 22, 15)), Date.UTC(2026, 9, 23, 15));
+});
+test('Vana\'diel day timers end at the next Vana\'diel midnight, tally timers at the next conquest tally', () => {
+  assert.equal(V.timerReady('vana', at(FIRESDAY, 23, 59)), V.dayStartOf(FIRESDAY + 1));
+  assert.equal(V.timerReady('vana', at(FIRESDAY)), V.dayStartOf(FIRESDAY + 1));
+  assert.equal(V.timerReady('tally', Date.UTC(2026, 9, 21, 12)), Date.UTC(2026, 9, 25, 15));
+  for (const k of V.TIMER_KINDS) assert.ok(['hours', 'jp', 'vana', 'tally'].includes(k.rule) && (k.rule !== 'hours' || k.id === 'custom' || k.hours > 0), k.id);
+});
+
+// ---- Elemental magic ----
+test('each element is opposed by the element whose day the clock calls its day penalty', () => {
+  for (const e of Object.keys(V.OPPOSED)) {
+    const penaltyDay = V.DAYS.findIndex((d) => V.dayEffect(e, V.DAYS.indexOf(d)) === -10);
+    assert.equal(V.DAYS[penaltyDay].weak, e, e);
+    assert.equal(V.DAYS[V.DAYS.findIndex((d) => d.element === e)].element, e);
+  }
+  assert.deepEqual(V.OPPOSED, { fire: 'water', ice: 'fire', wind: 'ice', earth: 'wind', lightning: 'earth', water: 'lightning', light: 'dark', dark: 'light' });
+});
+test('weather adds 10% single and 25% double for its element, and takes the same off the opposed element', () => {
+  assert.deepEqual([4, 5, 6, 7, 0, 3, 10].map((id) => V.weatherEffect('fire', id)), [10, 25, -10, -25, 0, 0, 0]);
+  assert.deepEqual([16, 17, 18, 19].map((id) => V.weatherEffect('dark', id)), [-10, -25, 10, 25]);
+});
+test('a day in a zone sums the day and the best and worst weather slot, capped at +40%', () => {
+  // Valkurm Dunes cycle day 17: Dust Storm usual, Sunshine common and rare. Day number CYCLE_START + 17 is weekday 1, Earthsday.
+  const n = CYCLE_START + 17;
+  assert.equal(V.mod(n, 8), 1);
+  const d = V.magicDay('earth', VALKURM, n);
+  assert.deepEqual([d.day, d.slots.map((s) => s.effect), d.best, d.worst], [10, [10, 0, 0], 20, 10]);
+  // Earth is lightning's opposed element: Earthsday and Dust Storm both count against lightning.
+  assert.deepEqual([V.magicDay('lightning', VALKURM, n).best, V.magicDay('lightning', VALKURM, n).worst], [-10, -20]);
+  assert.deepEqual([V.magicDay('wind', VALKURM, n).best, V.magicDay('wind', VALKURM, n).worst], [0, 0]);
+  assert.equal(V.MAGIC_CAP, 40);
+});
+
 // ---- Converter ----
 test('fromVana is the inverse of clock', () => {
   assert.equal(V.fromVana(886, 1, 1), V.EPOCH);
