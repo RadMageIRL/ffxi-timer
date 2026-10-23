@@ -1,0 +1,191 @@
+{
+  "note": "localStorage from v0.8 (3bf0e01) after using every panel; the webhook is a placeholder",
+  "settings": {
+    "hour12": false,
+    "sound": false,
+    "starred": [
+      "jeuno-windurst",
+      "jeuno-kazham"
+    ],
+    "routeTab": "ferry",
+    "guildCraft": "Fishing",
+    "guildOpenOnly": true,
+    "calTab": "moon",
+    "calCount": 20,
+    "calWeekday": -1,
+    "calPhase": 0,
+    "calRace": -1,
+    "planner": {
+      "weekdays": [
+        5
+      ],
+      "phases": [],
+      "from": null,
+      "to": null,
+      "minPercent": null,
+      "maxPercent": null,
+      "zone": 126,
+      "weatherElements": [
+        "lightning"
+      ],
+      "weatherDouble": false,
+      "weatherChance": "any"
+    },
+    "lead": 5,
+    "wxZone": 103,
+    "wxCount": 32,
+    "discord": "https://discord.com/api/webhooks/123/abc-DEF",
+    "wxFind": [
+      9,
+      11
+    ],
+    "wxFindDays": 32,
+    "starredZones": [
+      126,
+      103
+    ],
+    "savedPlans": [
+      {
+        "weekdays": [],
+        "phases": [
+          4
+        ],
+        "from": 18,
+        "to": 6,
+        "minPercent": null,
+        "maxPercent": null,
+        "zone": null,
+        "weatherElements": [],
+        "weatherDouble": false,
+        "weatherChance": "any"
+      },
+      {
+        "weekdays": [
+          5
+        ],
+        "phases": [],
+        "from": null,
+        "to": null,
+        "minPercent": null,
+        "maxPercent": null,
+        "zone": 126,
+        "weatherElements": [
+          "lightning"
+        ],
+        "weatherDouble": false,
+        "weatherChance": "any"
+      }
+    ],
+    "view": "full",
+    "tripFrom": "Selbina",
+    "tripTo": "Nashmau",
+    "tripTransfer": 2,
+    "fishId": 5127,
+    "nmKills": {
+      "Backoo|118": 1792668947360,
+      "Leshonki|153": 1792668947360
+    },
+    "magicElement": "ice",
+    "magicZone": 112,
+    "timers": [
+      {
+        "id": "mvjgt1uaeqzc",
+        "kind": "dynamis",
+        "label": "",
+        "start": 1792668949138
+      },
+      {
+        "id": "mvjgt2ebpx0w",
+        "kind": "enm",
+        "label": "Monarch Linn",
+        "start": 1792668949859
+      },
+      {
+        "id": "mvjgt2yebvxo",
+        "kind": "custom",
+        "label": "",
+        "start": 1792668950582,
+        "hours": 30
+      },
+      {
+        "id": "mvjgt3iaopp6",
+        "kind": "assault",
+        "label": "",
+        "start": 1792668951298
+      }
+    ],
+    "timerKind": "assault"
+  },
+  "alarms": [
+    {
+      "kind": "route",
+      "ref": "jeuno-sandoria",
+      "lead": 3,
+      "on": true,
+      "discord": true
+    },
+    {
+      "kind": "guild",
+      "ref": "Babubu",
+      "lead": 3,
+      "on": true,
+      "discord": false
+    },
+    {
+      "kind": "planner",
+      "ref": {
+        "weekdays": [],
+        "phases": [
+          4
+        ],
+        "from": 18,
+        "to": 6,
+        "minPercent": null,
+        "maxPercent": null,
+        "zone": null,
+        "weatherElements": [],
+        "weatherDouble": false,
+        "weatherChance": "any"
+      },
+      "lead": 10,
+      "on": true,
+      "discord": true
+    },
+    {
+      "kind": "nm",
+      "ref": "Dosetsu Tree|126",
+      "lead": 5,
+      "on": true,
+      "discord": true
+    },
+    {
+      "kind": "timer",
+      "ref": "mvjgt1uaeqzc",
+      "lead": 5,
+      "on": true,
+      "discord": true
+    },
+    {
+      "kind": "jp",
+      "ref": "",
+      "lead": 5,
+      "on": true,
+      "discord": true
+    },
+    {
+      "kind": "conquest",
+      "ref": "",
+      "lead": 5,
+      "on": true,
+      "discord": true
+    },
+    {
+      "kind": "moon",
+      "ref": "4",
+      "lead": 5,
+      "on": true,
+      "discord": true
+    }
+  ],
+  "theme": "dark"
+}

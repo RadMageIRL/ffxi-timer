@@ -2,13 +2,12 @@
 // runs the alarms. Live cells are written only when their text changes, so nothing flickers.
 (function () {
   'use strict';
-  const V = window.Vana;
+  const V = window.Vana, S = window.VanaStore;
   const $ = (id) => document.getElementById(id);
   const ROUTE = Object.fromEntries(V.ROUTES.map((r) => [r.id, r]));
   const GROUP = { airship: 'Airship', ferry: 'Ferry', manaclipper: 'Manaclipper', barge: 'Barge' };
-  const guildKey = (g) => g.npc.split(',')[0]; // NPC names are unique, craft and place are not
+  const { guildKey, nmKey } = S; // the keys saved settings and alarms use for guilds and NMs
   const GUILD = Object.fromEntries(V.SHOPS.map((g) => [guildKey(g), g]));
-  const nmKey = (nm) => `${nm.name}|${nm.zoneId}`; // two NMs can share a name in different zones
   const NM = new Map(V.nmList().map((nm) => [nmKey(nm), nm]));
   // How long an NM waits after it dies, in seconds: its respawn timer or lockout, or for a lottery NM
   // its cooldown. Null when nothing times it.
@@ -32,23 +31,84 @@
 
   // ---- Storage (every access guarded: private windows and blocked storage throw) ----
   const SETTINGS_KEY = 'ffxi_timer_settings', ALARMS_KEY = 'ffxi_timer_alarms', THEME_KEY = 'ffxi_timer_theme';
-  const load = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; } };
+  const read = (key) => { try { return localStorage.getItem(key); } catch (e) { return null; } };
   const save = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} };
-  const EMPTY_QUERY = {
-    weekdays: [], phases: [], from: null, to: null, minPercent: null, maxPercent: null,
-    zone: null, weatherElements: [], weatherDouble: false, weatherChance: 'any',
-  };
-  const DEFAULTS = {
-    hour12: null, sound: true, starred: [], routeTab: 'airship', guildCraft: 'all', guildOpenOnly: false,
-    calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
-    wxZone: 103, wxCount: 16, discord: '', wxFind: [], wxFindDays: 16, starredZones: [], savedPlans: [],
-    view: 'full', tripFrom: 'Port Bastok', tripTo: 'Kazham', tripTransfer: 1, fishId: 4401, // Moat Carp
-    nmKills: {}, magicElement: 'fire', magicZone: 103, timers: [], timerKind: 'dynamis',
-  };
-  const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
-  settings.planner = { ...EMPTY_QUERY, ...settings.planner };
+  const { EMPTY_QUERY, DEFAULTS } = S, STORE = S.context(V);
+  // Saved data goes through store.js before anything uses it. When something had to be repaired, the
+  // text as it was is kept under a _backup key and the repaired copy is saved, so the next load starts
+  // from good data instead of repairing the same damage again.
+  const repairs = [];
+  function loadChecked(key, check) {
+    const text = read(key), { value, notes } = check(S.parse(text));
+    if (notes.length) {
+      repairs.push(...notes);
+      try { localStorage.setItem(`${key}_backup`, text); } catch (e) {}
+      save(key, value);
+    }
+    return value;
+  }
+  const settings = loadChecked(SETTINGS_KEY, (v) => S.checkSettings(v, STORE));
   let gen = 0; // bumped on any settings change so every list rebuilds
-  const persist = () => { save(SETTINGS_KEY, settings); gen++; };
+
+  // ---- Several tabs ----
+  // Each tab remembers the stored text it last read or wrote, and its own settings as they were then
+  // (its base). A save puts this tab's changes since its base on top of whatever is stored now, so a
+  // change another tab saved first is kept, and a storage event brings another tab's changes in without
+  // a reload. Saves take a Web Lock where the browser has one, so two tabs saving at the same moment
+  // take turns and each merges into what the other wrote; changes made while a save waits for the lock
+  // go into that save.
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const sync = { settingsText: read(SETTINGS_KEY), settings: clone(settings), alarmsText: null, alarms: [] };
+  // A page opened from a file has no origin of its own, and Web Locks need one, so it saves at once.
+  // A tab keeps the save lock a moment after writing: storage reaches other tabs a few milliseconds
+  // after a write, and the next tab to save should read it.
+  const SAVE_LOCK = 'ffxi-timer-save', SAVE_HOLD = 50, saving = new Set(), lockable = 'locks' in navigator && location.protocol !== 'file:';
+  let saveLocks = lockable;
+  function queueSave(name, commit) {
+    if (saving.has(name)) return; // the save already waiting takes this change too
+    if (!saveLocks) { commit(); return; }
+    saving.add(name);
+    navigator.locks.request(SAVE_LOCK, () => { saving.delete(name); commit(); return new Promise((done) => setTimeout(done, SAVE_HOLD)); })
+      .catch(() => { saving.delete(name); saveLocks = false; commit(); }); // Web Locks refused after all
+  }
+  // Takes the shared fields of `next` into this tab; true when any changed.
+  function adoptShared(next) {
+    let changed = false;
+    for (const k of S.SHARED) if (!same(settings[k], next[k])) { settings[k] = next[k]; changed = true; }
+    return changed;
+  }
+  // Brings in a stored copy: this tab's changes since its base stay on top. True when anything changed.
+  function takeSettings(theirs) {
+    const before = clone(settings);
+    if (!adoptShared(S.mergeSettings(sync.settings, settings, theirs))) return false;
+    rearmFor(before);
+    gen++;
+    refreshControls();
+    return true;
+  }
+  function persist() { gen++; queueSave('settings', commitSettings); }
+  function commitSettings() {
+    const text = read(SETTINGS_KEY);
+    let next = settings;
+    if (text != null && text !== sync.settingsText) {
+      next = S.mergeSettings(sync.settings, settings, S.checkSettings(S.parse(text), STORE).value);
+      takeSettings(next);
+    }
+    const out = JSON.stringify(next);
+    try { localStorage.setItem(SETTINGS_KEY, out); } catch (e) {}
+    sync.settingsText = out;
+    sync.settings = clone(settings);
+  }
+  // Another tab saved settings. With a save of this tab's still waiting, the base stays as it was, so
+  // that save still sees this tab's change as a change.
+  function pullSettings() {
+    const text = read(SETTINGS_KEY);
+    if (text === sync.settingsText) return;
+    sync.settingsText = text;
+    takeSettings(S.checkSettings(S.parse(text), STORE).value);
+    if (!saving.has('settings')) sync.settings = clone(settings);
+  }
 
   // ---- Formatting ----
   const pad = (n) => String(n).padStart(2, '0');
@@ -130,14 +190,14 @@
 
   // ---- Alarms ----
   // Each alarm points at an event source by kind and ref. Due time is the event minus the warning.
-  const LEADS = [1, 2, 3, 5, 10];
+  const { LEADS } = S;
   function phaseStart(phase, after) {
     const w = V.findWindows(after, { phases: [phase] }, 3).find((x) => x.start > after);
     return w ? w.start : null;
   }
   const SOURCES = {
     route: { valid: (r) => !!ROUTE[r], next: (r, t) => V.nextDeparture(ROUTE[r], t), label: (r) => `${GROUP[ROUTE[r].group]} ${short(ROUTE[r].from)} → ${short(ROUTE[r].to)} departs` },
-    guild: { valid: (r) => !!GUILD[r], next: (r, t) => V.nextGuildOpening(GUILD[r], t), label: (r) => `${shopName(GUILD[r])} in ${GUILD[r].place} opens` },
+    guild: { valid: (r) => !!GUILD[r], next: (r, t) => V.nextGuildOpening(GUILD[r], t, holidaysOn()), label: (r) => `${shopName(GUILD[r])} in ${GUILD[r].place} opens` },
     jp: { valid: () => true, next: (r, t) => V.nextJpMidnight(t), label: () => 'JP midnight' },
     conquest: { valid: () => true, next: (r, t) => V.nextConquestTally(t), label: () => 'Conquest tally' },
     moon: { valid: (r) => r === '0' || r === '4', next: (r, t) => phaseStart(Number(r), t), label: (r) => `${V.MOON_PHASES[r]} begins` },
@@ -156,10 +216,48 @@
   // A planner alarm is keyed by its search, so each saved search can have its own.
   const planKey = (q) => planHash({ ...EMPTY_QUERY, ...q }).slice(1);
   const alarmId = (a) => (a.kind === 'planner' ? `planner:${planKey(a.ref)}` : `${a.kind}:${a.ref}`);
-  let alarms = load(ALARMS_KEY, []).filter((a) => a && SOURCES[a.kind] && SOURCES[a.kind].valid(a.ref));
+  const usable = (list) => list.filter((a) => SOURCES[a.kind].valid(a.ref));
+  let alarms = usable(loadChecked(ALARMS_KEY, (v) => S.checkAlarms(v, STORE, settings)));
   const runtime = new Map(); // alarm id -> { event, due } or null when the source has no next event
   let alarmGen = 0;
-  const saveAlarms = () => { save(ALARMS_KEY, alarms); alarmGen++; };
+  sync.alarmsText = read(ALARMS_KEY);
+  sync.alarms = clone(alarms);
+  // A new alarm list from storage or a merge: alarms that didn't change keep this tab's objects and
+  // their armed events; new or changed ones re-arm; ones that are gone are forgotten.
+  function takeAlarms(next) {
+    const mine = new Map(alarms.map((a) => [alarmId(a), a]));
+    alarms = usable(next).map((a) => { const old = mine.get(alarmId(a)); if (old && same(old, a)) return old; runtime.delete(alarmId(a)); return a; });
+    const ids = new Set(alarms.map(alarmId));
+    for (const id of [...runtime.keys()]) if (!ids.has(id)) runtime.delete(id);
+  }
+  function saveAlarms() { alarmGen++; queueSave('alarms', commitAlarms); }
+  function commitAlarms() {
+    const text = read(ALARMS_KEY);
+    if (text != null && text !== sync.alarmsText) { takeAlarms(S.mergeAlarms(sync.alarms, alarms, S.checkAlarms(S.parse(text), STORE, settings).value)); alarmGen++; refreshBells(); }
+    const out = JSON.stringify(alarms);
+    try { localStorage.setItem(ALARMS_KEY, out); } catch (e) {}
+    sync.alarmsText = out;
+    sync.alarms = clone(alarms);
+  }
+  function pullAlarms() {
+    const text = read(ALARMS_KEY);
+    if (text === sync.alarmsText) return;
+    sync.alarmsText = text;
+    takeAlarms(S.mergeAlarms(sync.alarms, alarms, S.checkAlarms(S.parse(text), STORE, settings).value));
+    if (!saving.has('alarms')) sync.alarms = clone(alarms);
+    alarmGen++;
+    refreshBells();
+  }
+  // Alarms whose next event comes from a shared setting that changed re-arm: NM alarms on a new kill
+  // time, timer alarms on a new start or another server's waits, guild alarms when guild holidays
+  // come or go.
+  function rearmFor(before) {
+    const kinds = new Set();
+    if (!same(before.nmKills, settings.nmKills)) kinds.add('nm');
+    if (!same(before.timers, settings.timers) || before.server !== settings.server) kinds.add('timer');
+    if (holidaysOn(before) !== holidaysOn()) kinds.add('guild');
+    for (const a of alarms) if (kinds.has(a.kind)) runtime.delete(alarmId(a));
+  }
   const hasAlarm = (id) => alarms.some((a) => alarmId(a) === id);
   function paintBell(b) {
     const on = hasAlarm(b.dataset.alarm);
@@ -173,39 +271,137 @@
     runtime.set(alarmId(a), event == null ? null : { event, due: event - a.lead * 60000 });
   }
   function checkAlarms(now) {
-    for (const a of alarms) {
-      if (!a.on) continue;
+    // Each alarm on its own, so one that throws can't keep the others from firing. Every tab arms its
+    // alarms and shows when they are next; only the alarm tab (below) delivers them.
+    for (const a of alarms) safely('alarms', () => {
+      if (!a.on) return;
       const id = alarmId(a);
       // A fresh alarm skips an event already inside its warning, rather than firing late on creation.
       if (!runtime.has(id)) arm(a, now + a.lead * 60000);
       const r = runtime.get(id);
-      if (!r || now < r.due) continue;
-      if (now < r.event) fire(a, r.event, now);
-      arm(a, r.event);
-    }
+      if (!r || now < r.due) return;
+      if (now < r.event && alarmTab) deliver(a, r.event);
+      if (alarms.includes(a)) arm(a, r.event); // unless reading storage just replaced it
+    });
+  }
+
+  // ---- Delivering alarms with several tabs open ----
+  // One tab delivers alarms: the toast, the chime, the notification and the Discord post. A Web Lock
+  // picks it: the first tab holds the lock until it closes, then the next tab waiting gets it, and a tab
+  // the player clicks or types in takes it over, since browsers only let a tab play sound after a click
+  // there. Every delivery is also claimed in IndexedDB, whose read-write transactions on one store run
+  // one after another across tabs, so it happens once even during a hand-over, and in browsers without
+  // Web Locks, where every tab tries. With neither, a localStorage record is the best effort left.
+  const ALARM_LOCK = 'ffxi-timer-alarms', DELIVERED_KEY = 'ffxi_timer_delivered';
+  let locks = !miniMode && lockable, alarmTab = !locks, waiting = null, letGo = null;
+  function leadAlarms(steal) {
+    if (waiting) { const w = waiting; waiting = null; w.abort(); }
+    const line = steal ? null : new AbortController();
+    waiting = line;
+    navigator.locks.request(ALARM_LOCK, steal ? { steal: true } : { signal: line.signal }, () => {
+      if (waiting === line) waiting = null;
+      alarmTab = true;
+      paintAlarmTab();
+      return new Promise((done) => { letGo = done; }); // held until this tab closes, freezes or another tab takes over
+    }).catch((e) => {
+      if (line && line.signal.aborted) return; // this tab left the line to take over, or to freeze
+      letGo = null;
+      if (e && e.name === 'AbortError') { alarmTab = false; paintAlarmTab(); leadAlarms(false); return; } // taken over: back in line
+      locks = false; alarmTab = true; paintAlarmTab(); // Web Locks refused here after all
+    });
+  }
+  // A tab the browser is about to freeze (Chrome's Energy Saver and the like fire 'freeze' first) or
+  // put in its back-forward cache lets go of the lock and leaves the line, so a tab that is still running
+  // delivers; it gets back in line when it runs again. The delivery claims keep the hand-over to one
+  // delivery. A browser that suspends a tab without either event can't be told apart from a slow one
+  // without polling, so the waiting tabs keep waiting until it runs again or the player clicks one.
+  function standDown() {
+    if (!locks) return;
+    if (waiting) { const w = waiting; waiting = null; w.abort(); }
+    if (letGo) { const done = letGo; letGo = null; done(); }
+    alarmTab = false;
+    paintAlarmTab();
+  }
+  const standUp = () => { if (locks && !alarmTab && !waiting) leadAlarms(false); };
+  const takeOver = () => { if (locks && !alarmTab) leadAlarms(true); };
+  function paintAlarmTab() { const hint = $('alarm-tab'); if (hint) hint.hidden = !locks || alarmTab; }
+  // Before delivering, storage is read again, so an alarm another tab just turned off, removed or moved
+  // doesn't fire from this tab's older copy; then the delivery is claimed.
+  async function deliver(a, event) {
+    pullSettings();
+    pullAlarms();
+    const id = alarmId(a), live = alarms.find((x) => alarmId(x) === id);
+    if (!live || !live.on) return;
+    if (SOURCES[live.kind].next(live.ref, Date.now()) !== event) { runtime.delete(id); return; }
+    if (await claim(`${id}@${event}`)) fire(live, event, Date.now());
+  }
+  let ledger = null;
+  function openLedger() {
+    if (!ledger) ledger = new Promise((resolve) => {
+      try {
+        const req = indexedDB.open('ffxi-timer', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('delivered');
+        req.onsuccess = () => { resolve(req.result); pruneLedger(req.result); };
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+    return ledger;
+  }
+  // Deliveries are kept two days, long enough for any tab still waiting on one.
+  function pruneLedger(db) {
+    try {
+      const store = db.transaction('delivered', 'readwrite').objectStore('delivered'), cutoff = Date.now() - 2 * V.EARTH_DAY;
+      store.openCursor().onsuccess = (e) => { const c = e.target.result; if (c) { if (!(c.value > cutoff)) c.delete(); c.continue(); } };
+    } catch (e) {}
+  }
+  async function claim(key) {
+    const db = await openLedger();
+    if (!db) return claimInStorage(key);
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('delivered', 'readwrite');
+        let mine = false;
+        const add = tx.objectStore('delivered').add(Date.now(), key); // fails when the key is there
+        add.onsuccess = () => { mine = true; };
+        add.onerror = (e) => e.preventDefault();
+        tx.oncomplete = () => resolve(mine);
+        tx.onabort = () => resolve(false);
+      } catch (e) { resolve(claimInStorage(key)); }
+    });
+  }
+  function claimInStorage(key) {
+    const now = Date.now(), stored = S.parse(read(DELIVERED_KEY)), done = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    if (done[key]) return false;
+    for (const k of Object.keys(done)) if (!(done[k] > now - 2 * V.EARTH_DAY)) delete done[k];
+    done[key] = now;
+    save(DELIVERED_KEY, done);
+    return true;
   }
   function fire(a, event, now) {
     const title = SOURCES[a.kind].label(a.ref);
     notify(title, `in ${countdown(event - now)} · ${vanaHM(event)} Vana'diel · ${earth(event, 'clock')} local`, alarmId(a));
     // Discord gets the Earth time as a timestamp tag, which each reader sees in their own time zone.
-    // Alarms saved before the per-alarm switch have no `discord` field and keep posting.
+    // Alarms saved before the per-alarm switch have no `discord` field and keep posting. The title can
+    // hold a timer note, so the post turns mentions off (see postDiscord).
     if (a.discord !== false) postDiscord(`**${title}** in ${countdown(event - now)} (${vanaHM(event)} Vana'diel, <t:${Math.round(event / 1000)}:T>)`);
   }
 
   // ---- Discord ----
   // A webhook takes a plain form post. The page cannot read Discord's reply from file:// or another
-  // origin, so the post is fire-and-forget; "Send test" is how to check the URL works.
-  const DISCORD_URL = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+\/?$/;
+  // origin, so the post is fire-and-forget; "Send test" is how to check the URL works. allowed_mentions
+  // with an empty parse list keeps @everyone, @here, roles and users in the text from pinging anyone.
+  const { DISCORD_URL } = S;
   function postDiscord(text, url = settings.discord) {
     if (!url || !DISCORD_URL.test(url)) return false;
     const body = new FormData();
-    body.append('content', text.slice(0, 1900));
+    body.append('payload_json', JSON.stringify({ content: text.slice(0, 1900), allowed_mentions: { parse: [] } }));
     fetch(url, { method: 'POST', body, mode: 'no-cors' }).catch(() => {});
     return true;
   }
+  const paintDiscord = () => setText($('discord-status'), settings.discord ? 'Saved. Alarms with Discord on post here.' : 'Not set.');
   function wireDiscord() {
-    const input = $('discord-url'), status = $('discord-status');
-    const paint = () => setText(status, settings.discord ? 'Saved. Alarms with Discord on post here.' : 'Not set.');
+    const input = $('discord-url'), status = $('discord-status'), paint = paintDiscord;
     input.value = settings.discord;
     paint();
     $('discord-save').addEventListener('click', () => {
@@ -252,6 +448,7 @@
   let audio = null;
   const unlockAudio = () => { if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } };
   window.addEventListener('pointerdown', unlockAudio, { once: true });
+  window.addEventListener('keydown', unlockAudio, { once: true });
   function chime() {
     if (!audio) return;
     if (audio.state === 'suspended') audio.resume().catch(() => {});
@@ -438,6 +635,46 @@
     });
   }
 
+  // ---- Server rules ----
+  // The pill picks whose rules apply where servers are known to differ: guild holidays, the Dynamis
+  // wait, the timers offered and the obi note. NM and fishing details are LandSandBoat's whichever is
+  // picked, and those panels say so when another server is.
+  const server = (s = settings) => V.SERVERS[s.server] || V.SERVERS.retail;
+  // Retail has no guild holidays; elsewhere they are a server setting, so Guild holidays turns them on.
+  const holidaysOn = (s = settings) => server(s).holidays && s.guildHolidays;
+  const SERVER_NOTES = {
+    nm: {
+      retail: "These conditions, timers, levels and drops are LandSandBoat's. Retail differs for some of these NMs.",
+      horizon: "These conditions, timers, levels and drops are LandSandBoat's. HorizonXI has changed some NMs, so they can differ there.",
+    },
+    fish: {
+      retail: "This panel follows LandSandBoat's fishing. On retail, New Moon and Full Moon are best for fishing, and some fish bite only at certain hours.",
+      horizon: "This panel follows LandSandBoat's fishing, which HorizonXI has changed, so it can differ there.",
+    },
+    timer: {
+      retail: 'These are retail\'s waits where they could be checked; for anything else, pick Custom and enter the hours.',
+      horizon: "Dynamis follows HorizonXI's two entries a week, reset at the conquest tally; the other waits are LandSandBoat's. Fields and Grounds of Valor, the Hunt Registry and ACP, AMK and ASA keys aren't on HorizonXI, so they aren't offered. For anything else, pick Custom and enter the hours.",
+      lsb: "These are LandSandBoat's default waits; if your server uses others, pick Custom and enter the hours.",
+    },
+  };
+  function paintServer() {
+    const s = server();
+    document.querySelectorAll('#server-tabs button').forEach((b) => { const on = b.dataset.server === s.id; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    for (const [id, notes] of [['nm-server-note', SERVER_NOTES.nm], ['fish-server-note', SERVER_NOTES.fish]]) { $(id).hidden = !notes[s.id]; setText($(id), notes[s.id] || ''); }
+    setText($('timer-server-note'), SERVER_NOTES.timer[s.id]);
+    $('magic-hachirin').hidden = !s.hachirin;
+  }
+  function setServer(id) {
+    if (!V.SERVERS[id] || id === settings.server) return;
+    const before = clone(settings);
+    settings.server = id;
+    rearmFor(before);
+    persist();
+    paintServer();
+    buildGuildFilter();
+    buildTimerKinds();
+  }
+
   // ---- Guilds ----
   const CRAFTS = [...new Set(V.SHOPS.map((g) => g.craft))];
   function paintGuildChip(chip, s) {
@@ -449,11 +686,11 @@
     const tr = el('tr', {},
       el('td', {}, g.craft, g.kind === 'guild' ? null : el('div', { class: 'sub', text: 'shop' })),
       el('td', { class: 'hide-sm wrap npc', text: g.npc }), el('td', { class: 'place', text: g.place }),
-      el('td', { class: 'hide-sm', text: `${pad(g.open)}:00-${pad(g.close)}:00` }), el('td', { class: 'hide-sm' }, dayName(g.holiday)),
+      el('td', { class: 'hide-sm', text: `${pad(g.open)}:00-${pad(g.close)}:00` }), holidaysOn() ? el('td', { class: 'hide-sm' }, dayName(g.holiday)) : null,
       el('td', {}, chip), el('td', {}, inText, sub),
       el('td', { class: 'c-bell' }, bell(`guild:${guildKey(g)}`, `Alarm before the ${shopName(g)} in ${g.place} opens`)));
     return { tr, update(now) {
-      const s = V.guildStatus(g, now);
+      const s = V.guildStatus(g, now, holidaysOn());
       paintGuildChip(chip, s);
       tr.classList.toggle('live', s.open);
       setText(inText, `${s.open ? 'closes' : 'opens'} in ${countdown(s.until - now)}`);
@@ -463,19 +700,27 @@
     } };
   }
   function renderGuilds(now) {
-    const key = `${settings.guildCraft}|${settings.guildOpenOnly}|${gen}`;
+    const key = `${settings.guildCraft}|${settings.guildOpenOnly}|${gen}`, holidays = holidaysOn();
+    $('guild-holiday-head').hidden = !holidays;
     liveRows($('guilds'), key, now, () => {
       let list = V.SHOPS.filter((g) => settings.guildCraft === 'all' || g.craft === settings.guildCraft);
       // With "open now" on, the list itself changes whenever any guild opens or closes.
-      const expires = settings.guildOpenOnly ? Math.min(...list.map((g) => V.guildStatus(g, now).until)) : Infinity;
-      if (settings.guildOpenOnly) list = list.filter((g) => V.guildStatus(g, now).open);
+      const expires = settings.guildOpenOnly ? Math.min(...list.map((g) => V.guildStatus(g, now, holidays).until)) : Infinity;
+      if (settings.guildOpenOnly) list = list.filter((g) => V.guildStatus(g, now, holidays).open);
       return { rows: list.length ? list.map(guildRow) : [emptyRow(8, 'Nothing in this filter is open right now.')], expires };
     });
   }
   function buildGuildFilter() {
-    const chip = (label, active, onclick) => el('button', { class: `chip${active ? ' active' : ''}`, type: 'button', 'aria-pressed': active ? 'true' : 'false', onclick }, label);
+    const chip = (label, active, onclick, title) => el('button', { class: `chip${active ? ' active' : ''}`, type: 'button', 'aria-pressed': active ? 'true' : 'false', title, onclick }, label);
+    // Retail has no guild holidays, so the switch is only offered for the other two.
+    const holidays = server().holidays ? [chip('Guild holidays', settings.guildHolidays, () => {
+      settings.guildHolidays = !settings.guildHolidays;
+      for (const a of alarms) if (a.kind === 'guild') runtime.delete(alarmId(a)); // re-arm for the new openings
+      persist(); buildGuildFilter();
+    }, 'Close each guild and shop all day on its weekly holiday, for servers that keep guild holidays')] : [];
     $('guild-filter').replaceChildren(
       chip('Open now', settings.guildOpenOnly, () => { settings.guildOpenOnly = !settings.guildOpenOnly; persist(); buildGuildFilter(); }),
+      ...holidays,
       chip('All', settings.guildCraft === 'all', () => { settings.guildCraft = 'all'; persist(); buildGuildFilter(); }),
       ...CRAFTS.map((c) => chip(c, settings.guildCraft === c, () => { settings.guildCraft = c; persist(); buildGuildFilter(); })),
     );
@@ -497,18 +742,24 @@
   // A zone or fish box takes any spelling of a name; an unknown name is flagged and leaves the setting
   // alone. The browser only suggests names that match what is in the box, so focusing it empties the box
   // (the name stays visible as the placeholder) to show the whole list; leaving without typing puts it back.
+  // Picking a name leaves the box focused, so a second click or the Down arrow brings no focus event;
+  // while the box still shows the current pick, those empty it the same way.
   const wireZoneInput = (input, get, set, allowEmpty) => wirePickInput(input, ZONE_NAME, ZONE_ID, get, set, allowEmpty);
   function wirePickInput(input, NAME, ID, get, set, allowEmpty) {
-    const placeholder = input.placeholder, restore = () => { input.value = NAME.get(get()) || ''; };
+    const placeholder = input.placeholder, current = () => NAME.get(get()) || '', restore = () => { input.value = current(); };
     let typed = false;
+    const open = () => { typed = false; input.placeholder = current() || placeholder; input.value = ''; };
+    const reopen = () => { if (document.activeElement === input && input.value && input.value === current()) open(); };
     restore();
-    input.addEventListener('focus', () => { typed = false; input.placeholder = NAME.get(get()) || placeholder; input.value = ''; });
+    input.addEventListener('focus', open);
+    input.addEventListener('pointerdown', reopen);
+    input.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown') reopen(); });
     input.addEventListener('input', () => { typed = true; });
     input.addEventListener('blur', () => { input.placeholder = placeholder; if (!typed && !input.value) restore(); });
     input.addEventListener('change', () => {
       if (!typed && !input.value) return; // emptied by focusing, not by the user
       const text = input.value.trim(), id = ID.get(text.toLowerCase());
-      if (id != null) { input.value = NAME.get(id); input.classList.remove('invalid'); set(id); persist(); }
+      if (id != null) { input.value = NAME.get(id); input.classList.remove('invalid'); typed = false; set(id); persist(); }
       else if (!text && allowEmpty) { input.classList.remove('invalid'); set(null); persist(); }
       else input.classList.add('invalid');
     });
@@ -825,18 +1076,22 @@
   let convertAt = null;
   const CV_FIELDS = ['cv-year', 'cv-month', 'cv-date', 'cv-hour', 'cv-minute'];
   const localInput = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+  // Either side takes a moment from 2000 to 2200, as the page's other date boxes do; one outside that is
+  // marked invalid and the converter keeps the last good moment.
   function wireConverter() {
     $('cv-earth').addEventListener('change', (e) => {
-      const t = new Date(e.target.value).getTime(); // a date and time with no offset parses as local time
-      if (!isNaN(t)) convertAt = t;
+      const t = new Date(e.target.value).getTime(), ok = S.validTime(t); // a date and time with no offset parses as local time
+      e.target.classList.toggle('invalid', !ok);
+      if (ok) convertAt = t;
     });
     CV_FIELDS.forEach((id) => $(id).addEventListener('change', () => {
       const [year, month, date, hour, minute] = CV_FIELDS.map((f) => Number($(f).value));
-      const ok = [year, month, date, hour, minute].every(Number.isInteger) && month >= 1 && month <= 12 && date >= 1 && date <= 30 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+      const ok = [year, month, date, hour, minute].every(Number.isInteger) && month >= 1 && month <= 12 && date >= 1 && date <= 30 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+        && S.validTime(V.fromVana(year, month, date, hour, minute));
       CV_FIELDS.forEach((f) => $(f).classList.toggle('invalid', !ok));
       if (ok) convertAt = V.fromVana(year, month, date, hour, minute);
     }));
-    $('cv-now').addEventListener('click', () => { convertAt = null; CV_FIELDS.forEach((f) => $(f).classList.remove('invalid')); });
+    $('cv-now').addEventListener('click', () => { convertAt = null; ['cv-earth', ...CV_FIELDS].forEach((f) => $(f).classList.remove('invalid')); });
   }
   function renderConverter(now) {
     const t = convertAt ?? now, c = V.clock(t), m = V.moon(t);
@@ -1074,7 +1329,7 @@
       el('div', { class: 'fish-facts' }, el('strong', { text: f.name }), ` · ${facts.join(' · ')}`),
       el('div', { class: 'fish-baits' }, el('span', { class: 'option-label', text: 'Bites on' }), ...f.baits.map((b) => {
         const lure = b.type === 1;
-        return el('span', { class: `bait p${b.power}`, title: `Power ${b.power}: adds ${BAIT_BONUS[b.power] - (lure ? 5 : 0)} to the hook chance` },
+        return el('span', { class: `bait p${b.power}`, title: `LandSandBoat power ${b.power}: adds ${BAIT_BONUS[b.power] - (lure ? 5 : 0)} to the hook chance` },
           `${b.name}${lure ? ' (lure)' : ''}`, el('span', { class: 'sub', text: ` ${BAIT_POWER[b.power]}` }));
       })),
     ];
@@ -1165,7 +1420,7 @@
     }
     td.append(
       el('input', { class: 'select kill-time', type: 'datetime-local', step: '60', value: localInput(kill), 'aria-label': `When ${nm.name} was killed`,
-        onchange: (e) => { const t = new Date(e.target.value).getTime(); if (!isNaN(t)) setKill(nm, t); } }),
+        onchange: (e) => { const t = new Date(e.target.value).getTime(), good = S.validTime(t); e.target.classList.toggle('invalid', !good); if (good) setKill(nm, t); } }),
       ' ', el('button', { class: 'button small danger', type: 'button', 'aria-label': `Clear ${nm.name}'s kill time`, title: 'Clear the kill time', onclick: () => setKill(nm, null) }, '×'), status);
     const first = kill + wait.min * 1000, last = kill + wait.max * 1000;
     return { td, update(now) {
@@ -1187,7 +1442,8 @@
       }
     }
     tr.append(
-      el('td', { class: 'wrap' }, el('strong', { text: nm.name }), nm.extra ? el('div', { class: 'sub', text: nm.extra }) : null),
+      el('td', { class: 'wrap' }, el('button', { class: 'nm-name', type: 'button', 'data-nm': nmKey(nm), 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'nm-card' }, nm.name),
+        nm.extra ? el('div', { class: 'sub', text: nm.extra }) : null),
       el('td', { class: 'wrap' }, ZONE_NAME.has(nm.zoneId) ? el('button', { class: 'link-btn zone-link', type: 'button', onclick: () => openForecast(nm.zoneId) }, nm.zone) : nm.zone),
       el('td', { class: 'wrap' }, needs || null, needs && nm.weather ? ' · ' : null, ...(nm.weather || []).flatMap((id, i) => [i ? ' ' : null, weatherChip(id)])),
       el('td', { class: 'wrap sub hide-sm', text: popsText(nm) }),
@@ -1201,6 +1457,7 @@
       const rows = [...NM.values()].map((nm) => nmRow(nm, now)).sort((a, b) => a.start - b.start);
       return { rows: rows.length ? rows : [emptyRow(8, 'No NMs loaded.')], expires: Math.min(...rows.map((r) => r.end)) };
     });
+    followCard();
   }
   function wireNms() {
     $('nm-clear').addEventListener('click', () => {
@@ -1208,15 +1465,145 @@
       settings.nmKills = {};
       persist();
     });
+    wireCard();
+  }
+
+  // ---- NM cards ----
+  // Pointing at an NM's name, focusing it or tapping it opens a card: the NM's level, the monsters it
+  // rolls off, where BG Wiki places it on the map, what it needs, how it pops and its drops. The card
+  // stays while the pointer is over the name or the card, so its link can be used. A click or tap pins
+  // it open until Escape, another click on the name or a click anywhere else.
+  const CARDS = window.VanaNmCards || {};
+  const card = { trigger: null, key: null, pinned: false, timer: 0 };
+  const rateText = (rate) => `${+(rate / 10).toFixed(1)}%`;
+  function cardBody(nm) {
+    const c = CARDS[nmKey(nm)] || { level: null, placeholders: [], drops: [], map: null };
+    const q = V.nmQuery(nm), fog = V.isFogOnly(nm);
+    const needs = [hoursText(fog ? q.hours : nm.hours), moonText(q), nm.weekday == null ? '' : V.DAYS[nm.weekday].name].filter(Boolean).join(' · ');
+    const level = c.level && `level ${c.level[0] === c.level[1] ? c.level[0] : `${c.level[0]}-${c.level[1]}`} in LandSandBoat`;
+    // A drop the NM rolls for more than once is one line, with each roll's rate.
+    const drops = [];
+    for (const [name, rate] of c.drops) { const d = drops.find((x) => x.name === name); if (d) d.rates.push(rate); else drops.push({ name, rates: [rate] }); }
+    const fact = (label, ...value) => el('div', {}, el('dt', { text: label }), el('dd', {}, ...value));
+    return [
+      el('div', { class: 'nm-card-head' }, el('strong', { text: nm.name }), el('span', { class: 'sub', text: [nm.zone, level].filter(Boolean).join(' · ') })),
+      el('dl', { class: 'facts one-col' },
+        c.map ? fact(c.map.at === 'qm' ? 'The ??? is at' : 'Where', `${c.map.grid.join(', ')} `,
+          el('a', { href: `https://www.bg-wiki.com/index.php?oldid=${c.map.revid}`, target: '_blank', rel: 'noopener noreferrer', title: `BG Wiki: ${c.map.page}` }, 'BG Wiki')) : null,
+        c.placeholders.length ? fact(c.placeholders.length > 1 ? 'Placeholders' : 'Placeholder', c.placeholders.join(', ')) : null,
+        needs || nm.weather ? fact('Needs', needs || null, needs && nm.weather ? ' · ' : null, ...(nm.weather || []).flatMap((id, i) => [i ? ' ' : null, weatherChip(id)])) : null,
+        fact('Pops', popsText(nm) || '-')),
+      el('h4', { text: 'Drops in LandSandBoat data' }),
+      drops.length
+        ? el('ul', { class: 'nm-drops' }, drops.map((d) => el('li', {}, el('span', { text: d.name }),
+          el('span', { class: 'rate', title: d.rates.length > 1 ? `${d.rates.length} separate rolls` : null, text: d.rates.map(rateText).join(', ') }))))
+        : el('p', { class: 'muted', text: 'No drops listed in LandSandBoat data.' }),
+      el('p', { class: 'hint', text: "The level and drop rates are LandSandBoat's base values, not retail's or HorizonXI's. Treasure Hunter raises the drop rates." }),
+    ];
+  }
+  function openCard(trigger, pin) {
+    clearTimeout(card.timer);
+    const nm = NM.get(trigger.dataset.nm), box = $('nm-card');
+    if (!nm) return;
+    if (card.trigger && card.trigger !== trigger) card.trigger.setAttribute('aria-expanded', 'false');
+    if (card.key !== trigger.dataset.nm || box.hidden) { box.replaceChildren(...cardBody(nm)); box.setAttribute('aria-label', `${nm.name}: level, map, needs and drops`); }
+    Object.assign(card, { trigger, key: trigger.dataset.nm, pinned: pin });
+    trigger.setAttribute('aria-expanded', 'true');
+    box.hidden = false;
+    placeCard();
+  }
+  function closeCard(refocus) {
+    clearTimeout(card.timer);
+    const box = $('nm-card');
+    if (box.hidden) return;
+    box.hidden = true;
+    card.pinned = false;
+    if (card.trigger) {
+      card.trigger.setAttribute('aria-expanded', 'false');
+      if (refocus && card.trigger.isConnected && document.activeElement !== card.trigger) { card.refocusing = true; card.trigger.focus(); card.refocusing = false; }
+    }
+  }
+  const closeSoon = () => { clearTimeout(card.timer); if (!card.pinned) card.timer = setTimeout(() => closeCard(false), 300); };
+  // Below the name, or above it when there is no room below, and inside the window's width.
+  function placeCard() {
+    const box = $('nm-card'), r = card.trigger.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
+    const left = Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8));
+    const top = r.bottom + 6 + h <= innerHeight || r.top < h + 6 ? r.bottom + 6 : r.top - 6 - h;
+    box.style.left = `${left + scrollX}px`;
+    box.style.top = `${top + scrollY}px`;
+  }
+  // When the NM list is built again, an open card moves to the new row for its NM.
+  function followCard() {
+    if ($('nm-card').hidden || !card.trigger || card.trigger.isConnected) return;
+    const next = [...document.querySelectorAll('#nm-body .nm-name')].find((b) => b.dataset.nm === card.key);
+    if (!next) { closeCard(false); return; }
+    card.trigger = next;
+    next.setAttribute('aria-expanded', 'true');
+    placeCard();
+  }
+  function wireCard() {
+    const body = $('nm-body'), box = $('nm-card'), nameIn = (e) => e.target instanceof Element && e.target.closest('.nm-name');
+    body.addEventListener('pointerover', (e) => {
+      const t = nameIn(e);
+      if (!t || e.pointerType !== 'mouse' || card.pinned) return;
+      clearTimeout(card.timer);
+      card.timer = setTimeout(() => openCard(t, false), 150);
+    });
+    body.addEventListener('pointerout', (e) => { const t = nameIn(e); if (t && e.pointerType === 'mouse' && !t.contains(e.relatedTarget)) closeSoon(); });
+    box.addEventListener('pointerenter', () => clearTimeout(card.timer));
+    box.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') closeSoon(); });
+    body.addEventListener('focusin', (e) => {
+      const t = nameIn(e);
+      if (card.refocusing) { card.refocusing = false; return; } // focus coming back after the card closed
+      if (t && !card.pinned) openCard(t, false);
+    });
+    document.addEventListener('focusout', (e) => {
+      if (box.hidden || card.pinned || !(e.target === card.trigger || box.contains(e.target))) return;
+      if (e.relatedTarget && (box.contains(e.relatedTarget) || e.relatedTarget === card.trigger)) return;
+      closeSoon();
+    });
+    body.addEventListener('click', (e) => {
+      const t = nameIn(e);
+      if (!t) return;
+      if (card.trigger === t && card.pinned && !box.hidden) closeCard(false); else openCard(t, true);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!box.hidden && !box.contains(e.target) && !(card.trigger && card.trigger.contains(e.target))) closeCard(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !box.hidden) closeCard(box.contains(document.activeElement) || document.activeElement === card.trigger);
+    });
+    // The card sits at the end of the page, so Tab from a name with its card open goes into the card,
+    // where its link and weather chips are; Tab past the card's last control goes on to what follows the
+    // name, and Shift+Tab from its first goes back to the name.
+    const tabbable = (root) => [...root.querySelectorAll('a[href], button, input, select')].filter((x) => !x.disabled && x.tabIndex >= 0 && x.getClientRects().length);
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab' || box.hidden || !card.trigger) return;
+      const inCard = tabbable(box), at = inCard.indexOf(document.activeElement);
+      if (!inCard.length) return;
+      if (document.activeElement === card.trigger && !e.shiftKey) { e.preventDefault(); inCard[0].focus(); }
+      else if (at === 0 && e.shiftKey) { e.preventDefault(); card.trigger.focus(); }
+      else if (at === inCard.length - 1 && !e.shiftKey) {
+        e.preventDefault();
+        const page = tabbable(document).filter((x) => !box.contains(x)), next = page[page.indexOf(card.trigger) + 1];
+        closeCard(false);
+        if (next) next.focus();
+      }
+    });
+    window.addEventListener('resize', () => { if (!box.hidden) placeCard(); });
+    body.closest('.table-wrap').addEventListener('scroll', () => { if (!box.hidden) placeCard(); }, { passive: true });
   }
 
   // ---- Personal timers ----
   // Each timer the player started: its kind, an optional note, when it started and when it ends.
+  // A kind's rule is the picked server's: on HorizonXI, Dynamis waits for the conquest tally.
   const TIMER_KIND = Object.fromEntries(V.TIMER_KINDS.map((k) => [k.id, k]));
+  const kindOf = (id) => V.timerRule(TIMER_KIND[id], settings.server);
   const RULE_TEXT = { jp: 'after the next JP midnight', vana: "after the next Vana'diel midnight", tally: 'after the conquest tally' };
   const ruleText = (k) => (k.rule === 'hours' ? (k.hours ? `${k.hours} hours` : 'hours you choose') : RULE_TEXT[k.rule]);
+  const ruleDetail = (k) => (k.note ? `${ruleText(k)}, ${k.note}` : ruleText(k));
   function timerOf(id) { return settings.timers.find((x) => x.id === id) || null; }
-  function timerReadyAt(x) { const k = TIMER_KIND[x.kind]; return V.timerReady(k.rule, x.start, k.id === 'custom' ? x.hours : k.hours); }
+  function timerReadyAt(x) { const k = kindOf(x.kind); return V.timerReady(k.rule, x.start, k.id === 'custom' ? x.hours : k.hours); }
   function timerName(x) { return x ? `${TIMER_KIND[x.kind].name}${x.label ? ` (${x.label})` : ''}` : 'Timer'; }
   // Removing a timer removes its alarm too.
   function removeTimers(ids) {
@@ -1228,11 +1615,11 @@
     refreshBells();
   }
   function timerRow(x, now) {
-    const k = TIMER_KIND[x.kind], ready = timerReadyAt(x), tr = el('tr'), inText = el('span', { class: 'count' }), chip = el('span', { class: 'state open', text: 'Ready' });
+    const k = kindOf(x.kind), ready = timerReadyAt(x), tr = el('tr'), inText = el('span', { class: 'count' }), chip = el('span', { class: 'state open', text: 'Ready' });
     tr.append(
-      el('td', { class: 'wrap' }, el('strong', { text: k.name }), x.label ? el('div', { class: 'sub', text: x.label }) : null, el('div', { class: 'sub', text: ruleText(k.id === 'custom' ? { ...k, hours: x.hours } : k) })),
+      el('td', { class: 'wrap' }, el('strong', { text: k.name }), x.label ? el('div', { class: 'sub', text: x.label }) : null, el('div', { class: 'sub', text: ruleDetail(k.id === 'custom' ? { ...k, hours: x.hours } : k) })),
       el('td', {}, el('input', { class: 'select kill-time', type: 'datetime-local', step: '60', value: localInput(x.start), 'aria-label': `When ${timerName(x)} started`,
-        onchange: (e) => { const t = new Date(e.target.value).getTime(); if (!isNaN(t)) { x.start = t; runtime.delete(`timer:${x.id}`); persist(); } } })),
+        onchange: (e) => { const t = new Date(e.target.value).getTime(), good = S.validTime(t); e.target.classList.toggle('invalid', !good); if (good) { x.start = t; runtime.delete(`timer:${x.id}`); persist(); } } })),
       el('td', {}, earthWhen(ready, now), el('div', { class: 'sub', text: `${vanaHM(ready)} Vana'diel` })),
       el('td', {}, chip, inText),
       el('td', { class: 'c-bell' }, bell(`timer:${x.id}`, `Alarm when ${timerName(x)} is ready`)),
@@ -1252,13 +1639,20 @@
       return { rows: rows.length ? rows : [emptyRow(6, 'No timers. Pick one above and press Start now when you do it.')] };
     });
   }
+  // The kinds the picked server has, each with its wait. Timers already started for a kind it hides
+  // stay in the list.
+  function buildTimerKinds() {
+    const hidden = server().hidden, kinds = V.TIMER_KINDS.filter((k) => !hidden.includes(k.id));
+    if (!kinds.some((k) => k.id === settings.timerKind)) settings.timerKind = kinds[0].id;
+    $('timer-kind').replaceChildren(...kinds.map((k) => { const o = el('option', { value: k.id, text: `${k.name} (${ruleText(kindOf(k.id))})` }); o.selected = k.id === settings.timerKind; return o; }));
+  }
   function wireTimers() {
     const kindSelect = $('timer-kind');
-    kindSelect.replaceChildren(...V.TIMER_KINDS.map((k) => { const o = el('option', { value: k.id, text: `${k.name} (${ruleText(k)})` }); o.selected = k.id === settings.timerKind; return o; }));
+    buildTimerKinds();
     kindSelect.addEventListener('change', (e) => { settings.timerKind = e.target.value; persist(); });
     $('timer-add').addEventListener('click', () => {
       const kind = settings.timerKind, hours = Number($('timer-hours').value);
-      if (kind === 'custom' && !(hours > 0)) { $('timer-hours').classList.add('invalid'); toast('Custom timer', 'Enter how many hours it lasts.'); return; }
+      if (kind === 'custom' && !(hours >= 0.1 && hours <= 8760)) { $('timer-hours').classList.add('invalid'); toast('Custom timer', 'Enter how many hours it lasts, from 0.1 to 8,760 (a year).'); return; }
       $('timer-hours').classList.remove('invalid');
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
       settings.timers = [...settings.timers, { id, kind, label: $('timer-label').value.trim(), start: Date.now(), ...(kind === 'custom' ? { hours } : {}) }];
@@ -1344,7 +1738,7 @@
     const tr = el('tr', {}, el('td', { text: g.craft }), el('td', { class: 'place', text: g.place }), el('td', { class: 'hide-sm' }, chip), el('td', {}, inText),
       el('td', { class: 'c-bell' }, bell(`guild:${guildKey(g)}`, `Alarm before the ${shopName(g)} in ${g.place} opens`)));
     return { tr, update(now) {
-      const s = V.guildStatus(g, now);
+      const s = V.guildStatus(g, now, holidaysOn());
       paintGuildChip(chip, s);
       tr.classList.toggle('live', s.open);
       // Phones hide the status column, so a holiday is named here too.
@@ -1445,9 +1839,8 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
 
   // ---- Theme ----
   // Same scheme as Kard and Delta: no attribute means follow the system setting.
-  const THEMES = ['system', 'light', 'dark', 'vana'];
-  let themeMode = 'system';
-  try { const t = localStorage.getItem(THEME_KEY); if (THEMES.includes(t)) themeMode = t; } catch (e) {}
+  const { THEMES } = S;
+  let themeMode = S.checkTheme(read(THEME_KEY));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintPip);
   function applyTheme(mode) {
     themeMode = THEMES.includes(mode) ? mode : 'system';
@@ -1465,7 +1858,29 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     try { if (next === 'system') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, next); } catch (e) {}
     applyTheme(next);
   }
-  window.addEventListener('storage', (e) => { if (e.key === THEME_KEY) applyTheme(e.newValue || 'system'); });
+  // Another tab saved something. A null key means storage was cleared.
+  window.addEventListener('storage', (e) => {
+    if (e.storageArea !== localStorage) return;
+    if (e.key === THEME_KEY || e.key === null) applyTheme(S.checkTheme(e.newValue));
+    if (e.key === SETTINGS_KEY || e.key === null) safely('settings from another tab', pullSettings);
+    if (e.key === ALARMS_KEY || e.key === null) safely('alarms from another tab', pullAlarms);
+  });
+  // After another tab's change, the controls built from the shared settings are built again. A box
+  // being typed in is left alone.
+  function refreshControls() {
+    if (miniMode) return;
+    const put = (id, v) => { const e = $(id); if (e && e !== document.activeElement) e.value = v; };
+    safely('toolbar', paintToolbar);
+    safely('server rules', paintServer);
+    safely('guild filter', buildGuildFilter);
+    safely('timer kinds', buildTimerKinds);
+    safely('planner controls', buildPlannerPresets);
+    put('lead-default', String(settings.lead));
+    put('trip-transfer', String(settings.tripTransfer));
+    put('discord-url', settings.discord);
+    safely('Discord', paintDiscord);
+    refreshBells();
+  }
 
   // ---- Wiring ----
   function paintToolbar() {
@@ -1480,6 +1895,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     $('sound-toggle').addEventListener('click', () => { settings.sound = !settings.sound; persist(); paintToolbar(); unlockAudio(); if (settings.sound) chime(); });
     $('mini-button').addEventListener('click', openMini);
     $('view-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-view]'); if (b) setView(b.dataset.view); });
+    $('server-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-server]'); if (b) setServer(b.dataset.server); });
     $('rse-details').addEventListener('click', () => {
       showFull();
       settings.calTab = 'rse'; rseFocus = null; persist(); paintToolbar(); buildCalendarControls();
@@ -1487,6 +1903,17 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     });
     $('theme-toggle').addEventListener('click', cycleTheme);
     $('about-button').addEventListener('click', () => $('about-dialog').showModal());
+    // The tagline's section links. The simple view has its own departures and guilds; a section it
+    // hides opens the full view first. Focus moves along so the keyboard carries on from there.
+    document.querySelectorAll('.tagline a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const id = settings.view === 'simple' && a.dataset.simple ? a.dataset.simple : a.getAttribute('href').slice(1);
+      if (id === a.getAttribute('href').slice(1)) showFull();
+      const target = $(id);
+      target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
     $('route-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) { settings.routeTab = b.dataset.tab; persist(); paintToolbar(); } });
     $('cal-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) { settings.calTab = b.dataset.tab; persist(); paintToolbar(); buildCalendarControls(); } });
     $('cal-ics').addEventListener('click', () => downloadIcs(`ffxi-${settings.calTab}.ics`, calendarEvents(Date.now())));
@@ -1496,7 +1923,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     $('notify-button').addEventListener('click', () => { if ('Notification' in window) Notification.requestPermission().then(paintNotify, () => {}); });
     $('test-alarm').addEventListener('click', () => { unlockAudio(); notify('Test alarm', 'This is how an alarm looks and sounds.', 'test'); });
     document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || (e.target instanceof Element && e.target.closest('input, select, textarea, dialog[open]'))) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || (e.target instanceof Element && e.target.closest('input, select, textarea, dialog[open], .nm-card'))) return;
       if (e.key === 't' || e.key === 'T') cycleTheme();
       else if (e.key === 'm' || e.key === 'M') openMini();
       else if (e.key === 's' || e.key === 'S') setView(settings.view === 'simple' ? 'full' : 'simple');
@@ -1530,19 +1957,26 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     requestAnimationFrame(() => $(id).scrollIntoView({ block: 'start' }));
   }
 
+  // A panel that throws is skipped and logged once, so one broken panel can't stop the clock, the
+  // alarms or the other panels. It tries again on every tick.
+  const failed = new Set();
+  function safely(name, f) {
+    try { f(); } catch (e) { if (!failed.has(name)) { failed.add(name); console.error(`ffxi-timer: ${name} failed`, e); } }
+  }
+  const PANELS = [['ships', renderRoutes], ['trips', renderTrips], ['guilds', renderGuilds], ['weather', renderWeather], ['weather finder', renderFinder],
+    ['elemental magic', renderMagic], ['calendars', renderCalendar], ['converter', renderConverter], ['planner', renderPlanner], ['fishing', renderFishing],
+    ['notorious monsters', renderNms], ['timers', renderTimers], ['alarm list', renderAlarms]];
   function tick() {
     const now = Date.now();
-    if (miniMode) { renderMini(now); return; }
+    if (miniMode) { safely('mini clock', () => renderMini(now)); return; }
     checkAlarms(now);
     if (!document.hidden) {
-      renderHero(now); renderStarredZones(now);
-      if (settings.view === 'simple') renderSimple(now);
-      else {
-        renderRoutes(now); renderTrips(now); renderGuilds(now); renderWeather(now); renderFinder(now); renderMagic(now);
-        renderCalendar(now); renderConverter(now); renderPlanner(now); renderFishing(now); renderNms(now); renderTimers(now); renderAlarms(now);
-      }
+      safely('clock, moon and resets', () => renderHero(now));
+      safely('starred zones', () => renderStarredZones(now));
+      if (settings.view === 'simple') safely('simple view', () => renderSimple(now));
+      else for (const [name, render] of PANELS) safely(name, () => render(now));
     }
-    if (mini) renderMini(now);
+    if (mini) safely('mini clock', () => renderMini(now));
   }
   // A worker's timer keeps ticking at full rate in a background tab, where page timers get slowed
   // to once a minute, so alarms stay on time. Fall back to a plain interval if workers are refused.
@@ -1557,7 +1991,8 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     } catch (e) { useInterval(); }
   }
 
-  applyTheme(themeMode);
+  // Each start-up step on its own too, so the clock starts whatever happens to one of them.
+  safely('theme', () => applyTheme(themeMode));
   if (miniMode) {
     document.title = 'ffxi-timer mini';
     $('mini-root').hidden = false;
@@ -1565,15 +2000,42 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
   } else {
     // ?simple opens the simple view and keeps it as the choice.
     if (/[?&]simple\b/.test(location.search) && settings.view !== 'simple') { settings.view = 'simple'; persist(); }
-    applyView();
-    const target = applyHash(location.hash);
-    wire();
-    paintToolbar();
-    paintNotify();
-    buildGuildFilter();
-    buildCalendarControls();
-    buildPlanner();
-    openTarget(target);
+    let target = null;
+    safely('view', applyView);
+    safely('shared link', () => { target = applyHash(location.hash); });
+    for (const [name, step] of [['controls', wire], ['toolbar', paintToolbar], ['server rules', paintServer], ['notifications', paintNotify], ['guild filter', buildGuildFilter],
+      ['calendar controls', buildCalendarControls], ['planner controls', buildPlanner]]) safely(name, step);
+    safely('shared link', () => openTarget(target));
+    if (repairs.length) toast('Saved data repaired', `${repairs.join('. ')}. The data as it was is kept in this browser's storage with _backup after its name.`);
+    // The alarm tab: wait in line for the lock, and take it over on a click or key press here.
+    if (locks) safely('alarm tab', () => leadAlarms(false));
+    window.addEventListener('pointerdown', takeOver);
+    // A control focused at the edge of a table that scrolls sideways is scrolled fully into view, with
+    // room for its focus ring; the browser leaves one that is partly showing where it is.
+    document.addEventListener('focusin', (e) => {
+      const wrap = e.target instanceof Element && e.target.closest('.table-wrap');
+      if (!wrap || wrap.scrollWidth <= wrap.clientWidth) return;
+      const r = e.target.getBoundingClientRect(), left = wrap.getBoundingClientRect().left + wrap.clientLeft, room = 6;
+      if (r.right > left + wrap.clientWidth - room) wrap.scrollLeft += r.right - (left + wrap.clientWidth - room);
+      else if (r.left < left + room) wrap.scrollLeft -= left + room - r.left;
+    });
+    window.addEventListener('keydown', takeOver);
+    paintAlarmTab();
+    // A save still waiting for the lock when the tab goes away is written straight away.
+    window.addEventListener('pagehide', (e) => { if (saving.has('settings')) commitSettings(); if (saving.has('alarms')) commitAlarms(); if (e.persisted) standDown(); });
+    // A tab back from being frozen, from the back-forward cache or from the background reads the shared
+    // settings, alarms and theme again before anything is changed in it, in case storage events from
+    // other tabs didn't reach it while it was away. It only reads; nothing is written.
+    const catchUp = () => {
+      safely('settings from another tab', pullSettings);
+      safely('alarms from another tab', pullAlarms);
+      const theme = S.checkTheme(read(THEME_KEY));
+      if (theme !== themeMode) applyTheme(theme);
+    };
+    window.addEventListener('pageshow', (e) => { if (e.persisted) { catchUp(); standUp(); } });
+    document.addEventListener('freeze', standDown);
+    document.addEventListener('resume', () => { catchUp(); standUp(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') catchUp(); });
   }
   tick();
   startClock();

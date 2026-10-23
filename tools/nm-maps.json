@@ -1,0 +1,305 @@
+{
+ "about": "BG Wiki citations for the NM hover cards, read by tools/build-nm-cards.mjs. Each entry gives the map grid as the page writes it, where it is (spawn: where the NM appears; qm: the ??? that pops it) and the page and revision id it was checked against: https://www.bg-wiki.com/index.php?oldid=<revid>. Grids the page hedges or contradicts are left out.",
+ "maps": {
+  "Citipati|7": {
+   "grid": [
+    "(F-8/9)"
+   ],
+   "at": "spawn",
+   "page": "Citipati",
+   "revid": 313818
+  },
+  "Xolotl|7": {
+   "grid": [
+    "(E-7)"
+   ],
+   "at": "spawn",
+   "page": "Xolotl",
+   "revid": 720640
+  },
+  "Shii|167": {
+   "grid": [
+    "Map 2 (H-8)"
+   ],
+   "at": "spawn",
+   "page": "Shii",
+   "revid": 780852
+  },
+  "Manes|167": {
+   "grid": [
+    "(H-8)"
+   ],
+   "at": "spawn",
+   "page": "Manes",
+   "revid": 721750
+  },
+  "Backoo|118": {
+   "grid": [
+    "(E-9)"
+   ],
+   "at": "spawn",
+   "page": "Backoo",
+   "revid": 718718
+  },
+  "Black Triple Stars|110": {
+   "grid": [
+    "(I-9)",
+    "(I-10)"
+   ],
+   "at": "spawn",
+   "page": "Black Triple Stars",
+   "revid": 766278
+  },
+  "Leshonki|153": {
+   "grid": [
+    "Map 4 (G-9)"
+   ],
+   "at": "spawn",
+   "page": "Leshonki",
+   "revid": 720265
+  },
+  "Haty|108": {
+   "grid": [
+    "(F-8) - (G-8)",
+    "(J-8/9)"
+   ],
+   "at": "spawn",
+   "page": "Haty",
+   "revid": 709266
+  },
+  "King Vinegarroon|125": {
+   "grid": [
+    "(G-11)"
+   ],
+   "at": "spawn",
+   "page": "King Vinegarroon",
+   "revid": 721259
+  },
+  "Kreutzet|113": {
+   "grid": [
+    "(I-8)"
+   ],
+   "at": "spawn",
+   "page": "Kreutzet",
+   "revid": 722435
+  },
+  "Dosetsu Tree|126": {
+   "grid": [
+    "(F-8)~(G-9)",
+    "(I-7/8)"
+   ],
+   "at": "spawn",
+   "page": "Dosetsu Tree",
+   "revid": 720179
+  },
+  "Toxic Tamlyn|109": {
+   "grid": [
+    "(G-8)"
+   ],
+   "at": "spawn",
+   "page": "Toxic Tamlyn",
+   "revid": 778710
+  },
+  "Silk Caterpillar|110": {
+   "grid": [
+    "(K-7)"
+   ],
+   "at": "spawn",
+   "page": "Silk Caterpillar",
+   "revid": 315890
+  },
+  "Diamond Daig|208": {
+   "grid": [
+    "Map 4 (H-8)"
+   ],
+   "at": "spawn",
+   "page": "Diamond Daig",
+   "revid": 721720
+  },
+  "Nussknacker|208": {
+   "grid": [
+    "Map 3 (J-5)~(K-6)"
+   ],
+   "at": "spawn",
+   "page": "Nussknacker",
+   "revid": 721718
+  },
+  "Ankou|190": {
+   "grid": [
+    "(J-8)"
+   ],
+   "at": "spawn",
+   "page": "Ankou",
+   "revid": 699463
+  },
+  "Habrok|117": {
+   "grid": [
+    "(F-11)"
+   ],
+   "at": "spawn",
+   "page": "Habrok",
+   "revid": 718954
+  },
+  "Odqan|25": {
+   "grid": [
+    "(J-7)",
+    "(G-8)"
+   ],
+   "at": "spawn",
+   "page": "Odqan",
+   "revid": 717187
+  },
+  "Elel|28": {
+   "grid": [
+    "(H/I/J-8) - (H/I/J-9)"
+   ],
+   "at": "spawn",
+   "page": "Elel",
+   "revid": 777712
+  },
+  "Bayawak|123": {
+   "grid": [
+    "(J-7)"
+   ],
+   "at": "spawn",
+   "page": "Bayawak",
+   "revid": 697390
+  },
+  "Noble Mold|121": {
+   "grid": [
+    "(E-9/10)"
+   ],
+   "at": "spawn",
+   "page": "Noble Mold",
+   "revid": 744835
+  },
+  "Ereshkigal|112": {
+   "grid": [
+    "(F-7/8)"
+   ],
+   "at": "spawn",
+   "page": "Ereshkigal",
+   "revid": 745214
+  },
+  "Hercules Beetle|2": {
+   "grid": [
+    "(G-7)"
+   ],
+   "at": "spawn",
+   "page": "Hercules Beetle",
+   "revid": 314509
+  },
+  "Ziphius|25": {
+   "grid": [
+    "(H-5)"
+   ],
+   "at": "spawn",
+   "page": "Ziphius",
+   "revid": 646003
+  },
+  "White Coney|5": {
+   "grid": [
+    "(K-11)"
+   ],
+   "at": "spawn",
+   "page": "White Coney",
+   "revid": 316366
+  },
+  "Black Coney|5": {
+   "grid": [
+    "(K-11)"
+   ],
+   "at": "spawn",
+   "page": "Black Coney",
+   "revid": 672480
+  },
+  "Marchelute|103": {
+   "grid": [
+    "(B-8)"
+   ],
+   "at": "qm",
+   "page": "Messenger from Beyond",
+   "revid": 779812
+  },
+  "Agas|153": {
+   "grid": [
+    "Map 2 (H-8)"
+   ],
+   "at": "spawn",
+   "page": "Agas",
+   "revid": 673099
+  },
+  "Baumesel|24": {
+   "grid": [
+    "(G-6)"
+   ],
+   "at": "qm",
+   "page": "Petals for Parelbriaux",
+   "revid": 700452
+  },
+  "Doman|103": {
+   "grid": [
+    "(B-7)"
+   ],
+   "at": "qm",
+   "page": "Yomi Okuri",
+   "revid": 755758
+  },
+  "Onryo|103": {
+   "grid": [
+    "(B-7)"
+   ],
+   "at": "qm",
+   "page": "Yomi Okuri",
+   "revid": 755758
+  },
+  "Asphyxiated Amsel|196": {
+   "grid": [
+    "(G-6)"
+   ],
+   "at": "spawn",
+   "page": "Asphyxiated Amsel",
+   "revid": 313198
+  },
+  "Burned Bergmann|196": {
+   "grid": [
+    "(I-6)"
+   ],
+   "at": "spawn",
+   "page": "Burned Bergmann",
+   "revid": 313732
+  },
+  "Crushed Krause|196": {
+   "grid": [
+    "(J-9)"
+   ],
+   "at": "spawn",
+   "page": "Crushed Krause",
+   "revid": 313887
+  },
+  "Pulverized Pfeffer|196": {
+   "grid": [
+    "(F-7)"
+   ],
+   "at": "spawn",
+   "page": "Pulverized Pfeffer",
+   "revid": 315644
+  },
+  "Smothered Schmidt|196": {
+   "grid": [
+    "(J-7)"
+   ],
+   "at": "spawn",
+   "page": "Smothered Schmidt",
+   "revid": 315940
+  },
+  "Wounded Wurfel|196": {
+   "grid": [
+    "Map 3 (H-6)"
+   ],
+   "at": "spawn",
+   "page": "Wounded Wurfel",
+   "revid": 688339
+  }
+ }
+}

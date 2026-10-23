@@ -244,10 +244,11 @@
   }
 
   // ---- Guild shops and other shops with hours ----
-  // Hours are Vana'diel hours, open from `open` up to but not including `close`, and closed all day
-  // on the holiday (a DAYS index). From LandSandBoat's guild shop data, which also gives hours to the
-  // Tenshodo, linkshell, chip and ferry fishing merchants. Merchants that share a place, hours and
-  // holiday share a row; `npc` lists them all.
+  // Hours are Vana'diel hours, open from `open` up to but not including `close`. `holiday` is the day
+  // (a DAYS index) a shop closes on servers that keep guild holidays; retail dropped them in June 2014
+  // and LandSandBoat only closes on them when GUILD_SHOP_HOLIDAYS is on, so they count only when asked.
+  // From LandSandBoat's guild shop data, which also gives hours to the Tenshodo, linkshell, chip and
+  // ferry fishing merchants. Merchants that share a place, hours and holiday share a row; `npc` lists them all.
   const SHOPS = [
     { kind: 'guild', craft: 'Alchemy', place: 'Bastok Mines', npc: 'Maymunah', open: 8, close: 23, holiday: 6 },
     { kind: 'guild', craft: 'Alchemy', place: 'Aht Urhgan Whitegate', npc: 'Wahraga, Gathweeda', open: 8, close: 23, holiday: 5 },
@@ -284,18 +285,18 @@
   ].map((g) => Object.freeze(g));
   const GUILDS = SHOPS.filter((s) => s.kind === 'guild');
 
-  function guildStatus(g, t) {
-    const c = clock(t), holidayToday = c.weekday === g.holiday;
+  function guildStatus(g, t, holidays = false) {
+    const c = clock(t), closed = (weekday) => holidays && weekday === g.holiday, holidayToday = closed(c.weekday);
     if (!holidayToday && c.hour >= g.open && c.hour < g.close) return { open: true, holiday: false, until: c.dayStart + g.close * HOUR };
     for (let d = 0; d < 3; d++) {
       const opens = c.dayStart + d * DAY + g.open * HOUR;
-      if (opens > t && mod(c.weekday + d, 8) !== g.holiday) return { open: false, holiday: holidayToday, until: opens };
+      if (opens > t && !closed(mod(c.weekday + d, 8))) return { open: false, holiday: holidayToday, until: opens };
     }
     return null; // unreachable: a guild has one holiday a week
   }
-  function nextGuildOpening(g, t) {
-    const s = guildStatus(g, t);
-    return s.open ? guildStatus(g, s.until).until : s.until;
+  function nextGuildOpening(g, t, holidays = false) {
+    const s = guildStatus(g, t, holidays);
+    return s.open ? guildStatus(g, s.until, holidays).until : s.until;
   }
 
   // ---- Weather ----
@@ -401,20 +402,20 @@
   // ---- Fishing ----
   // LandSandBoat's fishing applies the same timing to every fish (fishingutils.cpp). Its fish table
   // also lists hour, moon and month patterns for each fish, but the server never loads them.
-  // The moon index it uses comes from its own GetMoonPhase, whose ranges differ a little from the moon
-  // names elsewhere; percents that fall in a gap count as New Moon, and of the percents the moon
-  // reaches, only 43% waning does.
+  // The moon it goes by is an index like MOON_PHASES (0 New Moon to 7 Waning Crescent) whose percent
+  // ranges differ a little from the moon names elsewhere. For each direction, FISHING_MOON_FROM lists
+  // the percent where each stretch of the scale starts and the index it gives, lowest first; on a peak
+  // day (0% or 100%) only Full Moon has a stretch. The short stretches marked 0 are gaps
+  // between ranges, which count as New Moon; of the percents the moon reaches, only 43% waning is in one.
+  const FISHING_MOON_FROM = {
+    waxing: [[0, 0], [7, 1], [39, 0], [40, 2], [56, 0], [57, 3], [89, 0], [90, 4]],
+    waning: [[0, 0], [12, 7], [43, 0], [45, 6], [61, 0], [62, 5], [94, 0], [95, 4]],
+    peak: [[0, 0], [95, 4]],
+  };
   function fishingMoon(percent, direction) {
-    const waxing = direction === 'waxing', waning = direction === 'waning';
-    if (percent <= 5 || (percent <= 10 && waning)) return 0;
-    if (percent >= 7 && percent <= 38 && waxing) return 1;
-    if (percent >= 40 && percent <= 55 && waxing) return 2;
-    if (percent >= 57 && percent <= 88 && waxing) return 3;
-    if (percent >= 95 || (percent >= 90 && waxing)) return 4;
-    if (percent >= 62 && percent <= 93 && waning) return 5;
-    if (percent >= 45 && percent <= 60 && waning) return 6;
-    if (percent >= 12 && percent < 43 && waning) return 7;
-    return 0;
+    let index = 0;
+    for (const [from, i] of FISHING_MOON_FROM[direction] || FISHING_MOON_FROM.peak) if (percent >= from) index = i;
+    return index;
   }
   // What the moon adds to the weight of hooking a fish rather than an item, a monster or nothing, by
   // that index: floor(25 * MOONPATTERN_4) outdoors and floor(15 * MOONPATTERN_4) in cities.
@@ -475,6 +476,21 @@
     { id: 'weekly', name: 'Weekly quest', rule: 'tally' },
     { id: 'custom', name: 'Custom', rule: 'hours' },
   ];
+  // ---- Servers ----
+  // What changes with the server, where it has been confirmed: whether guild holidays exist at all (retail
+  // dropped them in June 2014; on HorizonXI and other LandSandBoat servers it is a server setting, off by
+  // default in LandSandBoat and unconfirmed for HorizonXI), lockouts that differ, timer presets for content
+  // the server doesn't have, and Hachirin-no-Obi, which is out of HorizonXI's era. Everything else, the
+  // clock, ships, weather and RSE included, is the same on all three.
+  const SERVERS = {
+    retail: { id: 'retail', name: 'Retail', holidays: false, timers: {}, hidden: [], hachirin: true },
+    // HorizonXI's server info page: "Account lockout is 3/week, 2/char/week", reset at the weekly tally.
+    horizon: { id: 'horizon', name: 'HorizonXI', holidays: true, timers: { dynamis: { rule: 'tally', note: 'once both entries this week are used' } },
+      hidden: ['hunt', 'regime', 'keys'], hachirin: false },
+    lsb: { id: 'lsb', name: 'Other LandSandBoat server', holidays: true, timers: {}, hidden: [], hachirin: true },
+  };
+  // A timer kind as a server sets it: its rule and hours, and a note when the server words it its own way.
+  const timerRule = (kind, server = 'retail') => ({ ...kind, ...((SERVERS[server] || SERVERS.retail).timers[kind.id] || {}) });
   function timerReady(rule, start, hours = 0) {
     if (rule === 'hours') return start + hours * 3600000;
     if (rule === 'jp') return nextJpMidnight(start);
@@ -634,7 +650,7 @@
     FOG, FOG_FROM, FOG_TO, isCity, hasMorningFog, weatherGroups, weatherTier, findWeather, weatherOdds,
     fishingMoon, fishingMoonOfDay, FISH_MOON, FISH_MOON_CITY, FISH_MOON_BEST, FISH_WEATHER, BITE_WAIT, BITE_HOURS,
     bestFishingMoons, useFishingData, fishList, fishOf, fishSpots, MOON_CYCLE_PHASE, useNmData, nmList, nmQuery, isFogOnly,
-    OPPOSED, MAGIC_CAP, MAGIC_ROLL, weatherEffect, dayEffect, magicDay, TIMER_KINDS, timerReady,
+    OPPOSED, MAGIC_CAP, MAGIC_ROLL, weatherEffect, dayEffect, magicDay, TIMER_KINDS, timerReady, SERVERS, timerRule,
     nextDays, hourSegments, findWindows, icsCalendar,
   };
   if (typeof module === 'object' && module.exports) module.exports = Vana;

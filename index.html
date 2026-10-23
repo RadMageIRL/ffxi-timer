@@ -21,23 +21,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
-  <title>FFXI Timer v0.8 - Vana'diel clock, ships and guilds</title>
-  <link rel="stylesheet" href="style.css">
+  <title>FFXI Timer v1.0 - Vana'diel clock, ships and guilds</title>
+  <link rel="stylesheet" href="style.css?v=1.0">
 </head>
 <body>
   <main class="app" id="app">
     <header class="topbar">
-      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v0.8 · vana'diel clock · ships · guilds · alarms</span></div>
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v1.0 · vana'diel clock</span></div>
       <nav class="toolbar" aria-label="Controls">
         <div class="tabs view-tabs" id="view-tabs" role="group" aria-label="View">
           <button type="button" data-view="full" aria-pressed="true" title="Every panel">Full</button>
           <button type="button" data-view="simple" aria-pressed="false" title="The clock, departures, guilds and the next days on one screen (S)">Simple</button>
+        </div>
+        <div class="tabs server-tabs" id="server-tabs" role="group" aria-label="Server rules">
+          <button type="button" data-server="retail" aria-pressed="true" title="Rules as retail Final Fantasy XI has them">Retail</button>
+          <button type="button" data-server="horizon" aria-pressed="false" title="Rules as HorizonXI has them, where they differ and are confirmed">HorizonXI</button>
+          <button type="button" data-server="lsb" aria-pressed="false" title="Another LandSandBoat server, with LandSandBoat's default rules">LSB</button>
         </div>
         <button class="button" id="hour-toggle" type="button" title="Earth times in 12 or 24 hour format">12h</button>
         <button class="button" id="sound-toggle" type="button" title="Play a chime when an alarm fires">Sound: on</button>
         <button class="button" id="mini-button" type="button" title="Open a small always-on-top clock window">Mini clock</button>
         <button class="button" id="theme-toggle" type="button" aria-label="Switch color theme">Theme</button>
         <button class="button" id="about-button" type="button">About</button>
+      </nav>
+      <nav class="tagline jump" aria-label="Sections">
+        <a href="#transport-panel" data-simple="s-routes-card">ships</a> · <a href="#trip-panel">trips</a> · <a href="#guild-panel" data-simple="s-guilds-card">guilds</a> ·
+        <a href="#weather-panel">weather</a> · <a href="#finder-panel">weather finder</a> · <a href="#magic-panel">magic</a> · <a href="#calendar-panel">calendars</a> ·
+        <a href="#convert-panel">converter</a> · <a href="#planner-panel">planner</a> · <a href="#fishing-panel">fishing</a> · <a href="#nm-panel">NMs</a> ·
+        <a href="#timer-panel">timers</a> · <a href="#alarm-panel">alarms</a>
       </nav>
     </header>
 
@@ -102,7 +113,7 @@
     </section>
 
     <section class="simple-board" id="simple-board" aria-label="At a glance">
-      <div class="card">
+      <div class="card" id="s-routes-card">
         <div class="card-label">Departures, soonest first</div>
         <div class="table-wrap">
           <table class="grid compact">
@@ -111,7 +122,7 @@
           </table>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="s-guilds-card">
         <div class="card-label">Guilds</div>
         <div class="table-wrap">
           <table class="grid compact">
@@ -178,7 +189,7 @@
       </div>
       <div class="table-wrap">
         <table class="grid guilds">
-          <thead><tr><th>Shop</th><th class="hide-sm">NPC</th><th>Place</th><th class="hide-sm">Hours</th><th class="hide-sm">Holiday</th><th>Status</th><th>Next</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
+          <thead><tr><th>Shop</th><th class="hide-sm">NPC</th><th>Place</th><th class="hide-sm">Hours</th><th class="hide-sm" id="guild-holiday-head" hidden>Holiday</th><th>Status</th><th>Next</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
           <tbody id="guilds"></tbody>
         </table>
       </div>
@@ -194,7 +205,7 @@
           <button class="button small" id="wx-share" type="button" title="Copy a link that opens this zone's forecast">Copy link</button>
         </div>
       </div>
-      <p class="hint">Each zone's weather follows a fixed 2,160-day cycle. Every Vana'diel day names a usual, a common and a rare weather, and the game switches among those three during the day, so this is a forecast of odds, not a promise. Double weather is in bold.</p>
+      <p class="hint">The forecast uses a 2,160-day weather table for each zone. Every Vana'diel day names a usual, a common and a rare weather, and the game switches among those three during the day, so this is a forecast of odds, not a promise. Double weather is in bold.</p>
       <p class="hint" id="wx-fog" hidden>From 02:00 to 07:00 Vana'diel time, LandSandBoat servers show Fog here whenever the weather would be Clear, Sunshine or Clouds. Cities don't get this morning fog, and LandSandBoat notes that retail fog works differently.</p>
       <div class="table-wrap">
         <table class="grid weather">
@@ -243,7 +254,7 @@
         </div>
       </div>
       <div class="chips" id="magic-elements"></div>
-      <p class="hint">Day and weather raise or lower elemental magic damage. The element's weather adds 10%, or 25% if it is double weather, and its day adds 10%; the opposing element's weather and day take the same off, and the total stops at +40%. Without an obi this happens on about a third of casts. The element's obi makes every cast get the bonuses, and Hachirin-no-Obi makes every cast get the bonuses and the penalties.</p>
+      <p class="hint">Day and weather raise or lower elemental magic damage. The element's weather adds 10%, or 25% if it is double weather, and its day adds 10%; the opposing element's weather and day take the same off, and the total stops at +40%. Without an obi this happens on about a third of casts. The element's obi makes every cast get the bonuses.<span id="magic-hachirin"> Hachirin-no-Obi makes every cast get the bonuses and the penalties.</span></p>
       <dl class="facts magic-now">
         <div><dt>Today</dt><dd id="magic-now">-</dd></div>
         <div><dt id="magic-best-label">Next +35%</dt><dd id="magic-best">-</dd></div>
@@ -283,7 +294,7 @@
         <h2 id="convert-title">Converter</h2>
         <button class="button small" id="cv-now" type="button" title="Go back to following the clock">Now</button>
       </div>
-      <p class="hint">One moment in Earth and Vana'diel time. Change either side and the other follows. Earth time is in your time zone.</p>
+      <p class="hint">One moment in Earth and Vana'diel time. Change either side and the other follows. Earth time is in your time zone, from 2000 to 2200.</p>
       <div class="convert-grid">
         <label class="option-group"><span class="option-label">Earth</span><input class="select" id="cv-earth" type="datetime-local" step="1"></label>
         <div class="option-group" role="group" aria-label="Vana'diel date and time">
@@ -352,7 +363,8 @@
           <button class="button small" id="fish-share" type="button" title="Copy a link that opens this fish">Copy link</button>
         </div>
       </div>
-      <p class="hint">You hook fish most often from Waxing Gibbous through Full Moon, and least at New Moon and Waning Crescent. Rain helps a little and a squall a little more. Bites come sooner at New Moon and Full Moon, and at 05:00 and 17:00.</p>
+      <p class="hint">You hook fish most often from Waxing Gibbous through Full Moon, and least at New Moon and Waning Crescent. Rain helps a little and a squall a little more. Bites come sooner at New Moon and Full Moon, and at 05:00 and 17:00. The fish, spots, bait strengths, rarity and harder zones come from LandSandBoat's fishing tables.</p>
+      <p class="hint server-note" id="fish-server-note" hidden></p>
       <div class="fish-info" id="fish-info"></div>
       <dl class="facts fish-now">
         <div><dt>Fishing moon now</dt><dd id="fish-moon">-</dd></div>
@@ -374,7 +386,8 @@
         <h2 id="nm-title">Notorious monsters</h2>
         <button class="button small" id="nm-clear" type="button" title="Clear every kill time" hidden>Clear kill times</button>
       </div>
-      <p class="hint">These NMs can only appear at certain hours, under a certain moon or in certain weather. A weather day is a day that weather can come up; the game moves among the day's three weathers, so it may not. A lottery NM takes its placeholder's place by chance when the placeholder respawns after a kill. Press Killed when one dies and its next chance waits for its timer.</p>
+      <p class="hint">These NMs can only appear at certain hours, under a certain moon or in certain weather. A weather day is a day that weather can come up; the game moves among the day's three weathers, so it may not. A lottery NM takes its placeholder's place by chance when the placeholder respawns after a kill. Press Killed when one dies and its next chance waits for its timer. Point at, tap or focus an NM's name for its level, placeholder, map position and drops. The lottery chances, timers, levels and drop rates are LandSandBoat's.</p>
+      <p class="hint server-note" id="nm-server-note" hidden></p>
       <div class="table-wrap">
         <table class="grid nms">
           <thead><tr><th>NM</th><th>Zone</th><th>Needs</th><th class="hide-sm">Pops</th><th>Next</th><th>In</th><th>Killed</th><th class="c-bell"><span class="sr-only">Alarm</span></th></tr></thead>
@@ -388,13 +401,13 @@
         <h2 id="timer-title">Timers</h2>
         <div class="option-group">
           <select class="select" id="timer-kind" aria-label="Kind of timer"></select>
-          <input class="num" id="timer-hours" type="number" min="0.1" step="0.1" placeholder="hours" aria-label="Hours the custom timer lasts" hidden>
+          <input class="num" id="timer-hours" type="number" min="0.1" max="8760" step="0.1" placeholder="hours" aria-label="Hours the custom timer lasts" hidden>
           <input class="select" id="timer-label" type="text" placeholder="Note (optional)" aria-label="Note for the timer" autocomplete="off">
           <button class="button small" id="timer-add" type="button">Start now</button>
           <button class="button small" id="timer-clear" type="button" title="Remove every timer" hidden>Clear all</button>
         </div>
       </div>
-      <p class="hint">Start a timer when you do something you can only do again later; change its start time if you started it late. These are LandSandBoat's default waits; if your server uses others, pick Custom and enter the hours.</p>
+      <p class="hint">Start a timer when you do something you can only do again later; change its start time if you started it late. <span id="timer-server-note">These are LandSandBoat's default waits; if your server uses others, pick Custom and enter the hours.</span></p>
       <div class="table-wrap">
         <table class="grid timers">
           <thead><tr><th>Timer</th><th>Started</th><th>Ready</th><th>In</th><th class="c-bell"><span class="sr-only">Alarm</span></th><th><span class="sr-only">Remove</span></th></tr></thead>
@@ -419,7 +432,8 @@
           <tbody id="alarms"></tbody>
         </table>
       </div>
-      <p class="hint" id="alarm-hint">Use a bell anywhere on the page to add an alarm. They live in this browser and only fire while this page is open; a minimized tab can fire a few seconds late.</p>
+      <p class="hint" id="alarm-tab" hidden>Another open tab of this page delivers the alarms: the toast, the chime, the notification and the Discord post. Click anywhere in this tab to have them delivered here instead.</p>
+      <p class="hint" id="alarm-hint">Use a bell anywhere on the page to add an alarm. They live in this browser and only fire while this page is open and the computer is awake; a browser that freezes or closes background tabs to save power or memory stops them too. With several tabs open, one of them delivers each alarm.</p>
       <div class="option-group discord-row">
         <span class="option-label">Discord</span>
         <input class="select wide" id="discord-url" type="url" placeholder="Webhook URL (optional)" aria-label="Discord webhook URL" autocomplete="off" spellcheck="false">
@@ -441,8 +455,8 @@
 
   <dialog class="about" id="about-dialog" aria-labelledby="about-title">
     <form method="dialog" class="about-body">
-      <h2 id="about-title">ffxi-timer v0.8</h2>
-      <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from the Earth clock; nothing is fetched and nothing leaves the browser.</p>
+      <h2 id="about-title">ffxi-timer v1.0</h2>
+      <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from this device's clock, so keep that clock set to update automatically. Nothing is fetched and nothing is sent anywhere, except alarm posts to a Discord webhook if you set one.</p>
       <h3>What it shows</h3>
       <ul>
         <li>Vana'diel time and date, the weekday's strong and weak elements, day or night, and the next day change</li>
@@ -450,8 +464,8 @@
         <li>JP midnight, the weekly conquest tally (Monday 00:00 JST) and this week's RSE race and dungeon</li>
         <li>All 8 airships, the 6 Selbina, Mhaura, Whitegate and Nashmau boats, the Manaclipper and the Phanauet barge: boarding status, departure in Vana'diel and local time, countdown and landing time</li>
         <li>Trips from any port to any port boats and airships connect, changing where one lands and the next leaves, such as Port Bastok to Kazham through Jeuno</li>
-        <li>22 guild shops and 10 other shops with set hours (Tenshodo, linkshells, chips, ferry fishing), with each NPC, holiday, open or closed status and the next open stretch in local time</li>
-        <li>Day, moon and RSE calendars, and a planner that finds when weekday, hour and moon conditions next line up, with saved searches that can each have an alarm</li>
+        <li>22 guild shops and 10 other shops with set hours (Tenshodo, linkshells, chips, ferry fishing), with each NPC, open or closed status and the next open stretch in local time; Guild holidays closes each one on its weekly holiday, for servers that keep them</li>
+        <li>Day, moon and RSE calendars, and a planner that finds when weekday, hour, moon and weather conditions next line up, with saved searches that can each have an alarm</li>
         <li>Add to calendar: calendar lists and planner windows download as an .ics file for Google Calendar, Outlook or Apple Calendar, with a reminder</li>
         <li>A converter between Earth and Vana'diel dates and times, with the weekday, moon and your starred zones' weather</li>
         <li>RSE details for any week: the chest key to trade, every monster that drops it, your race's set pieces and the sachet NM</li>
@@ -459,27 +473,34 @@
         <li>A weather finder: click any weather to see which zones are most likely to have it and when</li>
         <li>41 notorious monsters that only appear at certain hours, under a certain moon or in certain weather: what each one needs, how it pops, and when it can next appear, with an alarm</li>
         <li>Kill times for timed NMs: press Killed and the NM's next chance waits for its timer</li>
+        <li>A card for each NM: point at, tap or focus its name for its level, the monster it pops from, where BG Wiki places it on the map, and its drops at LandSandBoat's base rates</li>
         <li>Elemental magic: an element's day and weather effects in a zone, today and for the next 16 days, and when +35% next comes</li>
         <li>Timers for lockouts such as Dynamis, ENM key items and Assault tags, or any number of hours, with alarms</li>
         <li>Fishing for 100 fish: where each one bites, the baits and lures that hook it, and when the best fishing moon next comes with rain or a squall at each spot</li>
-        <li>Copy link buttons that share a planner search, a zone's forecast or a weather finder search</li>
+        <li>Copy link buttons that share a planner search, a zone's forecast, a weather finder search, an element and zone in Elemental magic, or a fish</li>
         <li>Alarms with browser notifications, a chime and optional Discord posts you can switch per alarm, and a mini clock that stays on top of the game window (Chrome and Edge)</li>
         <li>A Simple view: the clock, every departure soonest first, the guilds and the next eight days on one screen</li>
+        <li>Links under the header that jump to each panel, a 12 or 24 hour clock, and system, light, dark and Vana'diel themes</li>
+        <li>Several open tabs share their settings and alarms, and one of them delivers each alarm</li>
+        <li>Server rules next to Full and Simple: Retail, HorizonXI or another LandSandBoat server (LSB). They set guild holidays, the Dynamis wait, which timers are offered and the obi note to that server's rules, where those are confirmed</li>
       </ul>
       <h3>Accuracy</h3>
-      <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours, the RSE quest steps and the weather cycles come from LandSandBoat's data and scripts. Weather is a forecast of odds: each day names three weathers and the game moves among them. Outside cities, LandSandBoat servers also turn Clear, Sunshine and Clouds into Fog from 02:00 to 07:00.</p>
+      <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours, the RSE quest steps and the weather tables come from LandSandBoat's data and scripts. Times and schedules are the same on every server. Retail dropped guild holidays in June 2014, so with Retail picked guilds are open every day; on HorizonXI and other LandSandBoat servers it is a server setting, so Guild holidays turns them on. NM conditions, timers and drops, and fishing, follow LandSandBoat's rules whichever server is picked, and the panels say so where that server differs. Weather is a forecast of odds: each day names three weathers and the game moves among them. Outside cities, LandSandBoat servers also turn Clear, Sunshine and Clouds into Fog from 02:00 to 07:00.</p>
       <h3>Shortcuts</h3>
       <p><kbd>S</kbd> simple or full view · <kbd>T</kbd> theme · <kbd>M</kbd> mini clock · <kbd>?</kbd> this dialog</p>
       <div class="about-actions"><button class="button" value="close">Close</button></div>
     </form>
   </dialog>
 
+  <div class="nm-card" id="nm-card" role="dialog" aria-label="NM details" hidden></div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="weather-data.js"></script>
-  <script src="fishing-data.js"></script>
-  <script src="nm-data.js"></script>
-  <script src="vana.js"></script>
-  <script src="app.js"></script>
+  <script src="weather-data.js?v=1.0"></script>
+  <script src="fishing-data.js?v=1.0"></script>
+  <script src="nm-data.js?v=1.0"></script>
+  <script src="nm-cards.js?v=1.0"></script>
+  <script src="vana.js?v=1.0"></script>
+  <script src="store.js?v=1.0"></script>
+  <script src="app.js?v=1.0"></script>
 </body>
 </html>

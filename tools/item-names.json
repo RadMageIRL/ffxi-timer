@@ -1,0 +1,330 @@
+{
+ "about": "Display names for LandSandBoat item ids, each checked against its BG Wiki item page (title or singular log name) at the given revision.",
+ "items": {
+  "aces_helm": {
+   "name": "Ace's Helm",
+   "page": "Ace's_Helm",
+   "revid": 721260
+  },
+  "astaroth_cane": {
+   "name": "Astaroth Cane",
+   "page": "Astaroth_Cane",
+   "revid": 699464
+  },
+  "atlauas_ring": {
+   "name": "Atlaua's Ring",
+   "page": "Atlaua's_Ring",
+   "revid": 732455
+  },
+  "bag_of_cactus_stems": {
+   "name": "Cactus Stems",
+   "page": "Cactus_Stems",
+   "revid": 706865
+  },
+  "bag_of_fruit_seeds": {
+   "name": "Fruit Seeds",
+   "page": "Fruit_Seeds",
+   "revid": 603389
+  },
+  "bandomusha_kote": {
+   "name": "Bandomusha Kote",
+   "page": "Bandomusha_Kote",
+   "revid": 716415
+  },
+  "bat_fang": {
+   "name": "Bat Fang",
+   "page": "Bat_Fang",
+   "revid": 723118
+  },
+  "beetle_jaw": {
+   "name": "Beetle Jaw",
+   "page": "Beetle_Jaw",
+   "revid": 680341
+  },
+  "beetle_shell": {
+   "name": "Beetle Shell",
+   "page": "Beetle_Shell",
+   "revid": 682701
+  },
+  "besieger_mantle": {
+   "name": "Besieger Mantle",
+   "page": "Besieger_Mantle",
+   "revid": 718791
+  },
+  "black_hose": {
+   "name": "Black Hose",
+   "page": "Black_Hose",
+   "revid": 725755
+  },
+  "bravos_subligar": {
+   "name": "Bravo's Subligar",
+   "page": "Bravo's_Subligar",
+   "revid": 732456
+  },
+  "carect_ring": {
+   "name": "Carect Ring",
+   "page": "Carect_Ring",
+   "revid": 747066
+  },
+  "cluster_core": {
+   "name": "Cluster Core",
+   "page": "Cluster_Core",
+   "revid": 696464
+  },
+  "corse_bracelet": {
+   "name": "Corse Bracelet",
+   "page": "Corse_Bracelet",
+   "revid": 688977
+  },
+  "corse_robe": {
+   "name": "Corse Robe",
+   "page": "Corse_Robe",
+   "revid": 645179
+  },
+  "druids_slops": {
+   "name": "Druid's Slops",
+   "page": "Druid's_Slops",
+   "revid": 719338
+  },
+  "frenzy_sallet": {
+   "name": "Frenzy Sallet",
+   "page": "Frenzy_Sallet",
+   "revid": 755330
+  },
+  "frost_turnip": {
+   "name": "Frost Turnip",
+   "page": "Frost_Turnip",
+   "revid": 722631
+  },
+  "gargoyle_boots": {
+   "name": "Gargoyle Boots",
+   "page": "Gargoyle_Boots",
+   "revid": 747067
+  },
+  "giant_bird_feather": {
+   "name": "Giant Bird Feather",
+   "page": "Giant_Bird_Fthr.",
+   "revid": 767109
+  },
+  "giant_bird_plume": {
+   "name": "Giant Bird Plume",
+   "page": "G._Bird_Plume",
+   "revid": 696554
+  },
+  "harpe": {
+   "name": "Harpe",
+   "page": "Harpe",
+   "revid": 719344
+  },
+  "heavy_shell": {
+   "name": "Heavy Shell",
+   "page": "Heavy_Shell",
+   "revid": 721262
+  },
+  "hospitaler_earring": {
+   "name": "Hospitaler Earring",
+   "page": "Hospitaler_Earring",
+   "revid": 751724
+  },
+  "insect_wing": {
+   "name": "Insect Wing",
+   "page": "Insect_Wing",
+   "revid": 774934
+  },
+  "leshonki_bulb": {
+   "name": "Leshonki Bulb",
+   "page": "Leshonki_Bulb",
+   "revid": 706867
+  },
+  "lizard_egg": {
+   "name": "Lizard Egg",
+   "page": "Lizard_Egg",
+   "revid": 686740
+  },
+  "lizard_skin": {
+   "name": "Lizard Skin",
+   "page": "Lizard_Skin",
+   "revid": 773233
+  },
+  "lizard_tail": {
+   "name": "Lizard Tail",
+   "page": "Lizard_Tail",
+   "revid": 698978
+  },
+  "lucent_cape": {
+   "name": "Lucent Cape",
+   "page": "Lucent_Cape",
+   "revid": 716854
+  },
+  "luminicloth": {
+   "name": "Luminicloth",
+   "page": "Luminicloth",
+   "revid": 772717
+  },
+  "magical_mitts": {
+   "name": "Magical Mitts",
+   "page": "Magical_Mitts",
+   "revid": 755331
+  },
+  "maldust_ring": {
+   "name": "Maldust Ring",
+   "page": "Maldust_Ring",
+   "revid": 751871
+  },
+  "malflame_ring": {
+   "name": "Malflame Ring",
+   "page": "Malflame_Ring",
+   "revid": 751892
+  },
+  "malflash_ring": {
+   "name": "Malflash Ring",
+   "page": "Malflash_Ring",
+   "revid": 751893
+  },
+  "malfrost_ring": {
+   "name": "Malfrost Ring",
+   "page": "Malfrost_Ring",
+   "revid": 751891
+  },
+  "malgust_ring": {
+   "name": "Malgust Ring",
+   "page": "Malgust_Ring",
+   "revid": 751704
+  },
+  "mandragora_scale": {
+   "name": "Mandragora Scale",
+   "page": "Mandra_Scale",
+   "revid": 718612
+  },
+  "nokizaru_hakama": {
+   "name": "Nokizaru Hakama",
+   "page": "Nokizaru_Hakama",
+   "revid": 750371
+  },
+  "perseuss_harpe": {
+   "name": "Perseus's Harpe",
+   "page": "Perseus's_Harpe",
+   "revid": 716414
+  },
+  "piece_of_mahogany_heartwood": {
+   "name": "Mahogany Heartwood",
+   "page": "Mahogany_Htwd.",
+   "revid": 717868
+  },
+  "pinch_of_cluster_ash": {
+   "name": "Cluster Ash",
+   "page": "Cluster_Ash",
+   "revid": 479573
+  },
+  "protecting_bangles": {
+   "name": "Protecting Bangles",
+   "page": "Prt._Bangles",
+   "revid": 721712
+  },
+  "raikiri": {
+   "name": "Raikiri",
+   "page": "Raikiri",
+   "revid": 720180
+  },
+  "rain_hat": {
+   "name": "Rain Hat",
+   "page": "Rain_Hat",
+   "revid": 720195
+  },
+  "revival_tree_root": {
+   "name": "Revival Tree Root",
+   "page": "Revival_Root",
+   "revid": 732480
+  },
+  "rogetsurin": {
+   "name": "Rogetsurin",
+   "page": "Rogetsurin",
+   "revid": 709264
+  },
+  "sand_gloves": {
+   "name": "Sand Gloves",
+   "page": "Sand_Gloves",
+   "revid": 721717
+  },
+  "selenes_bow": {
+   "name": "Selene's Bow",
+   "page": "Selene's_Bow",
+   "revid": 773280
+  },
+  "silkworm_egg": {
+   "name": "Silkworm Egg",
+   "page": "Silkworm_Egg",
+   "revid": 717821
+  },
+  "sirocco_kukri": {
+   "name": "Sirocco Kukri",
+   "page": "Sirocco_Kukri",
+   "revid": 722436
+  },
+  "slice_of_hare_meat": {
+   "name": "Hare Meat",
+   "page": "Hare_Meat",
+   "revid": 776456
+  },
+  "slick_dart": {
+   "name": "Slick Dart",
+   "page": "Slick_Dart",
+   "revid": 608987
+  },
+  "spool_of_silk_thread": {
+   "name": "Silk Thread",
+   "page": "Silk_Thread",
+   "revid": 758353
+  },
+  "square_of_cotton_cloth": {
+   "name": "Cotton Cloth",
+   "page": "Cotton_Cloth",
+   "revid": 722512
+  },
+  "square_of_taffeta_cloth": {
+   "name": "Taffeta Cloth",
+   "page": "Taffeta_Cloth",
+   "revid": 744788
+  },
+  "sukesada": {
+   "name": "Sukesada",
+   "page": "Sukesada",
+   "revid": 721803
+  },
+  "tathlum_belt": {
+   "name": "Tathlum Belt",
+   "page": "Tathlum_Belt",
+   "revid": 765702
+  },
+  "tavnazia_pass": {
+   "name": "Tavnazia Pass",
+   "page": "Tavnazia_Pass",
+   "revid": 718608
+  },
+  "treant_bulb": {
+   "name": "Treant Bulb",
+   "page": "Treant_Bulb",
+   "revid": 554881
+  },
+  "venomous_claw": {
+   "name": "Venomous Claw",
+   "page": "Venomous_Claw",
+   "revid": 721263
+  },
+  "war_hose": {
+   "name": "War Hose",
+   "page": "War_Hose",
+   "revid": 750370
+  },
+  "wolf_hide": {
+   "name": "Wolf Hide",
+   "page": "Wolf_Hide",
+   "revid": 676792
+  },
+  "zoolater_hat": {
+   "name": "Zoolater Hat",
+   "page": "Zoolater_Hat",
+   "revid": 716413
+  }
+ }
+}

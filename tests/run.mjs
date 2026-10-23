@@ -2,7 +2,7 @@
 // Reference values come from sources independent of this code: the server's epoch, the anchors
 // in Pyogenes' timer, BG Wiki's moon table and the in-game ferry timekeeper schedules.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const V = createRequire(import.meta.url)('../vana.js');
@@ -268,12 +268,20 @@ test('the Bastok alchemy guild opens at 08:00 and is open until 23:00', () => {
 test('the Bastok alchemy guild closed at 23:00 reopens the next morning', () => {
   assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY, 23)), { open: false, holiday: false, until: at(FIRESDAY + 1, 8) });
 });
-test('the Bastok alchemy guild is closed all Lightsday and reopens Darksday at 08:00', () => {
-  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 6, 12)), { open: false, holiday: true, until: at(FIRESDAY + 7, 8) });
-  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 5, 23)), { open: false, holiday: false, until: at(FIRESDAY + 7, 8) });
+test('with guild holidays on, the Bastok alchemy guild is closed all Lightsday and reopens Darksday at 08:00', () => {
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 6, 12), true), { open: false, holiday: true, until: at(FIRESDAY + 7, 8) });
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 5, 23), true), { open: false, holiday: false, until: at(FIRESDAY + 7, 8) });
 });
-test('the next opening of an open guild is the following morning', () => {
+// Retail dropped guild holidays in the June 2014 version update, and LandSandBoat's GUILD_SHOP_HOLIDAYS is off by default.
+test('without guild holidays, the Bastok alchemy guild opens on Lightsday like any other day', () => {
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 6, 12)), { open: true, holiday: false, until: at(FIRESDAY + 6, 23) });
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 5, 23)), { open: false, holiday: false, until: at(FIRESDAY + 6, 8) });
+  assert.deepEqual(V.guildStatus(ALCHEMY, at(FIRESDAY + 6, 7), false), { open: false, holiday: false, until: at(FIRESDAY + 6, 8) });
+});
+test('the next opening of an open guild is the following morning, skipping the holiday only when holidays are on', () => {
   assert.equal(V.nextGuildOpening(ALCHEMY, at(FIRESDAY, 9)), at(FIRESDAY + 1, 8));
+  assert.equal(V.nextGuildOpening(ALCHEMY, at(FIRESDAY + 5, 9)), at(FIRESDAY + 6, 8));
+  assert.equal(V.nextGuildOpening(ALCHEMY, at(FIRESDAY + 5, 9), true), at(FIRESDAY + 7, 8));
 });
 test('every shop has hours inside one day, a real holiday and a named NPC', () => {
   for (const g of V.SHOPS) assert.ok(g.open < g.close && g.close <= 24 && g.holiday >= 0 && g.holiday < 8 && g.npc, `${g.craft} ${g.place}`);
@@ -282,10 +290,11 @@ test('no NPC is listed for two shops, so each can key its own alarm', () => {
   const names = V.SHOPS.flatMap((g) => g.npc.split(', '));
   assert.equal(new Set(names).size, names.length);
 });
-test('the Norg Tenshodo opens at 09:00 and closes on Darksday', () => {
+test('the Norg Tenshodo opens at 09:00, and closes on Darksday only with holidays on', () => {
   const g = V.SHOPS.find((s) => s.craft === 'Tenshodo' && s.place === 'Norg');
   assert.deepEqual(V.guildStatus(g, at(FIRESDAY, 8)), { open: false, holiday: false, until: at(FIRESDAY, 9) });
-  assert.equal(V.guildStatus(g, at(FIRESDAY + 7, 12)).holiday, true);
+  assert.equal(V.guildStatus(g, at(FIRESDAY + 7, 12), true).holiday, true);
+  assert.equal(V.guildStatus(g, at(FIRESDAY + 7, 12)).open, true);
 });
 
 // ---- Calendars and planner ----
@@ -393,6 +402,11 @@ test('zone groups cover every weather zone exactly once', () => {
   assert.equal(ids.length, V.weatherZones().length);
   assert.equal(new Set(ids).size, ids.length);
 });
+test('Jugner Forest [S] has the weather of La Vaule [S], not Vunkerl Inlet [S]', () => {
+  const groupOf = (id) => V.weatherGroups().find((g) => g.zones.some((z) => z.id === id));
+  assert.equal(groupOf(82), groupOf(85));
+  assert.notEqual(groupOf(82), groupOf(83));
+});
 test('Valkurm Dunes has dust storms usual on 120 days of the cycle and common on 638 (counted from the SQL)', () => {
   const row = V.weatherOdds([DUST_STORM]).find((r) => r.group.zones.some((z) => z.id === VALKURM));
   assert.deepEqual(row.counts, [120, 638, 0]);
@@ -470,6 +484,17 @@ test("the fishing moon index follows LandSandBoat's GetMoonPhase ranges", () => 
     [88, 'waxing'], [90, 'waxing'], [100, 'peak'], [95, 'waning'], [93, 'waning'], [62, 'waning'], [60, 'waning'], [45, 'waning'], [42, 'waning'], [12, 'waning']]
     .map(([p, d]) => V.fishingMoon(p, d)), [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 7]);
 });
+test('the fishing moon index for every percent, waxing, waning and at a peak', () => {
+  // One digit per percent from 0 to 100.
+  const scale = {
+    waxing: '00000001111111111111111111111111111111102222222222222222033333333333333333333333333333333044444444444',
+    waning: '00000000000077777777777777777777777777777770066666666666666660555555555555555555555555555555550444444',
+    peak: '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000444444',
+  };
+  for (const [direction, digits] of Object.entries(scale)) {
+    assert.equal(Array.from({ length: 101 }, (_, p) => V.fishingMoon(p, direction)).join(''), digits, direction);
+  }
+});
 test('43% waning falls in a gap of those ranges and counts as New Moon, the only gap the moon reaches', () => {
   assert.equal(V.fishingMoon(43, 'waning'), 0);
   const gaps = [];
@@ -526,9 +551,11 @@ test('the nine harder fishing zones carry their difficulty', () => {
 // ---- Notorious monsters ----
 V.useNmData(createRequire(import.meta.url)('../nm-data.js'));
 const nmNamed = (name) => V.nmList().find((n) => n.name === name);
+// A citation is a file, a line and a fingerprint of that line; the line itself is not copied.
+const citation = (s) => Object.keys(s).join() === 'file,line,sha' && s.file && s.line > 0 && /^[0-9a-f]{12}$/.test(s.sha);
 test('every NM cites its source and names only moons and weathers the page knows', () => {
   for (const nm of V.nmList()) {
-    assert.ok(nm.sources.length && nm.sources.every((s) => s.file && s.line > 0 && s.text.length >= 10), nm.name);
+    assert.ok(nm.sources.length && nm.sources.every(citation), nm.name);
     for (const m of nm.moon || []) assert.ok(m in V.MOON_CYCLE_PHASE, `${nm.name}: ${m}`);
     for (const id of nm.weather || []) assert.ok(V.WEATHERS[id], `${nm.name}: weather ${id}`);
     for (const [a, b] of nm.hours || []) assert.ok(a >= 0 && b <= 24 && a < b, `${nm.name}: hours ${a}-${b}`);
@@ -646,6 +673,309 @@ test('long calendar lines fold at 75 octets, counting multi-byte characters', ()
   assert.ok(unfolded.includes(`DESCRIPTION:${'x'.repeat(100)} ${'é'.repeat(60)} `), 'folding loses nothing');
 });
 
+// ---- Saved data ----
+// store.js checks saved settings and alarms before the page uses them. Valid data must come back as it
+// went in; damage is repaired or dropped one field or record at a time; a repaired copy checks clean.
+const S = createRequire(import.meta.url)('../store.js');
+const CTX = S.context(V);
+const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/v0.8-storage.json', import.meta.url), 'utf8'));
+const checkS = (raw) => S.checkSettings(raw, CTX);
+const checkA = (raw, settings = checkS(undefined).value) => S.checkAlarms(raw, CTX, settings);
+const fromText = (text) => checkS(S.parse(text));
+const T0 = Date.UTC(2026, 9, 22, 12);
+const timer = (over = {}) => ({ id: 'a1', kind: 'enm', label: 'Monarch Linn', start: T0, ...over });
+// Checking what a check returned finds nothing more to repair, so a reload doesn't repair it again.
+function assertStable(result, alarms) {
+  const again = alarms ? checkA(result.value, alarms) : checkS(result.value);
+  assert.deepEqual(again.notes, []);
+  assert.deepEqual(again.value, result.value);
+}
+
+test('saved settings from v0.8 come back unchanged, with guild holidays off and Retail picked', () => {
+  const r = checkS(FIXTURE.settings);
+  assert.deepEqual(r.notes, []);
+  assert.deepEqual(r.value, { ...FIXTURE.settings, guildHolidays: false, server: 'retail' });
+  assert.equal(Object.keys(FIXTURE.settings).length, 30);
+});
+test('saved alarms from v0.8, one of every kind, come back unchanged', () => {
+  const settings = checkS(FIXTURE.settings).value, r = checkA(FIXTURE.alarms, settings);
+  assert.deepEqual(r.notes, []);
+  assert.deepEqual(r.value, FIXTURE.alarms);
+  assert.deepEqual([...new Set(r.value.map((a) => a.kind))].sort(), [...S.ALARM_KINDS].sort());
+});
+test('an alarm saved before the per-alarm Discord switch keeps having no switch, which means on', () => {
+  const r = checkA([{ kind: 'jp', ref: '', lead: 3, on: true }]);
+  assert.deepEqual(r.notes, []);
+  assert.equal('discord' in r.value[0], false);
+});
+test('nothing saved gives the defaults with nothing to report, and the defaults are not shared', () => {
+  const r = checkS(undefined);
+  assert.deepEqual(r.notes, []);
+  assert.deepEqual(r.value, S.DEFAULTS);
+  r.value.starred.push('jeuno-sandoria');
+  r.value.planner.weekdays.push(1);
+  assert.deepEqual(S.DEFAULTS.starred, []);
+  assert.deepEqual(S.DEFAULTS.planner.weekdays, []);
+  assert.deepEqual(checkA(undefined), { value: [], notes: [] });
+});
+test('a missing field takes its default without counting as a repair', () => {
+  const r = checkS({ sound: false, starred: ['jeuno-kazham'] });
+  assert.deepEqual(r.notes, []);
+  assert.equal(r.value.sound, false);
+  assert.deepEqual(r.value.starred, ['jeuno-kazham']);
+  assert.equal(r.value.wxZone, S.DEFAULTS.wxZone);
+});
+
+// The 15 corrupted-storage cases the v1.0 audit's browser run found (10 of them blanked the page).
+const CORRUPT = [
+  ['settings that are not JSON', () => fromText('{not json'), (v) => assert.deepEqual(v, S.DEFAULTS)],
+  ['settings saved as null', () => fromText('null'), (v) => assert.deepEqual(v, S.DEFAULTS)],
+  ['settings saved as an array', () => fromText('[1,2]'), (v) => assert.deepEqual(v, S.DEFAULTS)],
+  ['starred routes set to null', () => checkS({ starred: null, sound: false }), (v) => { assert.deepEqual(v.starred, []); assert.equal(v.sound, false); }],
+  ['timers saved as a string', () => checkS({ timers: 'x' }), (v) => assert.deepEqual(v.timers, [])],
+  ['NM kill times set to null', () => checkS({ nmKills: null }), (v) => assert.deepEqual(v.nmKills, {})],
+  ['a saved search that is null', () => checkS({ savedPlans: [null, { ...S.EMPTY_QUERY, phases: [4] }] }), (v) => assert.deepEqual(v.savedPlans, [{ ...S.EMPTY_QUERY, phases: [4] }])],
+  ['planner weekdays set to null', () => checkS({ planner: { ...S.EMPTY_QUERY, weekdays: null, phases: [0] } }), (v) => { assert.deepEqual(v.planner.weekdays, []); assert.deepEqual(v.planner.phases, [0]); }],
+  ['zone, fish and port ids that do not exist', () => checkS({ wxZone: 'abc', magicZone: -1, fishId: 'x', tripFrom: 'Nowhere' }),
+    (v) => assert.deepEqual([v.wxZone, v.magicZone, v.fishId, v.tripFrom], [S.DEFAULTS.wxZone, S.DEFAULTS.magicZone, S.DEFAULTS.fishId, S.DEFAULTS.tripFrom])],
+  ['starred zones saved as a number', () => checkS({ starredZones: 5 }), (v) => assert.deepEqual(v.starredZones, [])],
+  ['alarms saved as an object', () => checkA({}), (v) => assert.deepEqual(v, []), true],
+  ['an alarm of kind constructor', () => checkA([{ kind: 'constructor', ref: '' }, { kind: 'jp', ref: '', lead: 3, on: true }]), (v) => assert.deepEqual(v.map((a) => a.kind), ['jp']), true],
+  ['an alarm with no warning time', () => checkA([{ kind: 'route', ref: 'jeuno-sandoria', on: true }]), (v) => assert.equal(v[0].lead, S.DEFAULTS.lead), true],
+  ['a timer of a kind this version does not have', () => checkS({ timers: [timer({ id: 'z', kind: 'zzz' }), timer()] }), (v) => assert.deepEqual(v.timers, [timer()])],
+  ['a theme that is not one of the four', () => ({ value: S.checkTheme('"><script>'), notes: ['theme'] }), (v) => assert.equal(v, 'system'), 'theme'],
+];
+for (const [name, run, expect, kind] of CORRUPT) {
+  test(`corrupted storage, ${name}: repaired, reported, and clean when checked again`, () => {
+    const r = run();
+    expect(r.value);
+    assert.ok(r.notes.length > 0, 'the repair is reported');
+    if (kind !== 'theme') assertStable(r, kind ? checkS(undefined).value : undefined);
+  });
+}
+
+test('one bad timer is dropped and the good ones are kept as they were', () => {
+  const good = [timer(), timer({ id: 'c', kind: 'custom', hours: 30, label: '' }), timer({ id: 'd', kind: 'dynamis', label: '' })];
+  const r = checkS({ timers: [good[0], { id: 'x', kind: 'zzz', start: T0 }, good[1], timer({ id: 'a1', label: 'repeat of a1' }), timer({ id: 'h', kind: 'custom', hours: 1e12 }),
+    timer({ id: 's', start: 'yesterday' }), good[2], timer({ id: 'n', label: 5 }), 7, null] });
+  assert.deepEqual(r.value.timers, [...good, timer({ id: 'n', label: '' })]);
+  assert.match(r.notes.join(' '), /Timers: a note that was not text was cleared/);
+  assert.match(r.notes.join(' '), /Timers: left out 6 entries that could not be used/);
+  assertStable(r);
+});
+test('a custom timer saved by v0.8 with more than a year of hours is kept; one that ends past 2200 is not', () => {
+  const long = timer({ id: 'l', kind: 'custom', hours: 20000 }), far = timer({ id: 'f', kind: 'custom', hours: 2e6 });
+  assert.deepEqual(checkS({ timers: [long, far] }).value.timers, [long]);
+});
+test('kill times and timer starts have to be real dates between 2000 and 2200', () => {
+  const kills = { 'Haty|108': T0, 'Haty|108 ': T0, 'Ankou|159': 'yesterday', 'Kreutzet|113': 1e20, 'Shii|167': Date.UTC(1999, 11, 31), 'Xolotl|7': NaN, 'Citipati|7': -5, 'Leshonki|153': Date.UTC(2150, 0, 1) };
+  const r = checkS({ nmKills: kills });
+  assert.deepEqual(r.value.nmKills, { 'Haty|108': T0, 'Leshonki|153': Date.UTC(2150, 0, 1) });
+  assert.ok(S.validTime(S.TIME_MIN) && S.validTime(S.TIME_MAX) && !S.validTime(S.TIME_MAX + 1) && !S.validTime(Infinity) && !S.validTime('1'));
+  assert.deepEqual(checkS({ timers: [timer({ start: 8.64e16 })] }).value.timers, []);
+});
+test('a timer with no note is kept with an empty one, without counting as a repair', () => {
+  const { label, ...noLabel } = timer();
+  const r = checkS({ timers: [noLabel] });
+  assert.deepEqual(r.value.timers, [{ ...noLabel, label: '' }]);
+  assert.deepEqual(r.notes, []);
+});
+test('nested values in a search are put right field by field, and fields the planner never saves are removed', () => {
+  const r = checkS({ planner: { weekdays: [[1], 2, '3', 2, 9], phases: [4], from: {}, to: [], minPercent: 101, maxPercent: 90, zone: 99999,
+    weatherElements: ['fire', 'plasma', 'fire'], weatherDouble: 'yes', weatherChance: 'sometimes', hours: [[0, 24]], weatherIds: [1] } });
+  assert.deepEqual(r.value.planner, { ...S.EMPTY_QUERY, weekdays: [2], phases: [4], maxPercent: 90, weatherElements: ['fire'] });
+  assert.match(r.notes.join(' '), /fields it does not use were removed/);
+  assertStable(r);
+});
+test('a search with a start hour and no end gets the end the planner would give it; no start and an end is left as v0.8 saves it', () => {
+  assert.deepEqual(S.checkQuery({ ...S.EMPTY_QUERY, from: 20, to: null }, CTX).value.to, 24);
+  const kept = S.checkQuery({ ...S.EMPTY_QUERY, from: null, to: 24 }, CTX);
+  assert.deepEqual([kept.value.to, kept.notes], [24, []]);
+});
+test('saved searches keep the good ones, drop ones left with no condition, and drop repeats', () => {
+  const full = { ...S.EMPTY_QUERY, phases: [4], from: 18, to: 6 };
+  const r = checkS({ savedPlans: [full, { phases: 'x', weekdays: [7] }, {}, { ...S.EMPTY_QUERY, zone: 103 }, full, 'Darksday'] });
+  assert.deepEqual(r.value.savedPlans, [full, { ...S.EMPTY_QUERY, weekdays: [7] }]);
+  assertStable(r);
+});
+test('lists of routes, zones and weathers keep known ids once each, in their order', () => {
+  const r = checkS({ starred: ['jeuno-kazham', 'nowhere', 'jeuno-kazham', 3, 'bastok-jeuno'], starredZones: [126, '126', 103, 126, 1e9], wxFind: [9, 0, 20, 11, 9, 1.5] });
+  assert.deepEqual([r.value.starred, r.value.starredZones, r.value.wxFind], [['jeuno-kazham', 'bastok-jeuno'], [126, 103], [9, 11]]);
+});
+test('every alarm field is repaired where it can be, and an alarm is dropped only when it points at nothing', () => {
+  const settings = checkS({ timers: [timer()], lead: 5 }).value;
+  const r = checkA([
+    { kind: 'moon', ref: 4, lead: 3, on: true }, { kind: 'jp', ref: 'x', lead: 7, on: 'yes', discord: 'sometimes' },
+    { kind: 'planner', ref: { weekdays: [1], extra: {} }, lead: 3, on: true }, { kind: 'planner', ref: { weekdays: 'none' }, lead: 3, on: true },
+    { kind: 'route', ref: {}, lead: 3, on: true }, { kind: 'guild', ref: 'Babubu', lead: 3, on: false, discord: false },
+    { kind: 'timer', ref: 'a1', lead: 3, on: true }, { kind: 'timer', ref: 'gone', lead: 3, on: true }, { kind: 'nm', ref: 'Haty|108', lead: 1, on: true },
+    { kind: 'nm', ref: 'Haty|999', lead: 1, on: true }, { kind: 'guild', ref: 'Babubu', lead: 10, on: true }, { kind: '__proto__', ref: '' }, 'jp', null,
+  ], settings);
+  assert.deepEqual(r.value, [
+    { kind: 'moon', ref: '4', lead: 3, on: true }, { kind: 'jp', ref: '', lead: 5, on: true },
+    { kind: 'planner', ref: { ...S.EMPTY_QUERY, weekdays: [1] }, lead: 3, on: true }, { kind: 'guild', ref: 'Babubu', lead: 3, on: false, discord: false },
+    { kind: 'timer', ref: 'a1', lead: 3, on: true }, { kind: 'nm', ref: 'Haty|108', lead: 1, on: true },
+  ]);
+  assert.deepEqual(r.notes, ['Alarms: left out 8 alarms that could not be used', 'Alarms: repaired 3 alarms']);
+  assertStable(r, settings);
+});
+test('a timer alarm goes with a timer that was dropped', () => {
+  const settings = checkS({ timers: [timer({ kind: 'zzz' })] }).value;
+  assert.deepEqual(checkA([{ kind: 'timer', ref: 'a1', lead: 3, on: true }], settings).value, []);
+});
+test('a field this version does not know is kept for the version that saved it', () => {
+  const r = checkS({ ...FIXTURE.settings, serverRules: 'retail', futureList: [1, 2] });
+  assert.deepEqual(r.notes, []);
+  assert.equal(r.value.serverRules, 'retail');
+  assert.deepEqual(r.value.futureList, [1, 2]);
+});
+test('a __proto__ key in saved data stays an ordinary key and changes no prototype', () => {
+  const r = fromText('{"__proto__": {"polluted": true}, "nmKills": {"__proto__": 5, "Haty|108": 1792668947360}}');
+  assert.equal({}.polluted, undefined);
+  assert.equal(Object.getPrototypeOf(r.value), Object.prototype);
+  assert.deepEqual(r.value.nmKills, { 'Haty|108': 1792668947360 });
+});
+test('the Discord webhook is kept only when it is a Discord webhook URL', () => {
+  assert.equal(checkS({ discord: FIXTURE.settings.discord }).value.discord, FIXTURE.settings.discord);
+  for (const bad of ['https://example.com/api/webhooks/1/x', 'javascript:alert(1)', 5, null]) assert.equal(checkS({ discord: bad }).value.discord, '');
+});
+test('the four themes are kept and anything else follows the system', () => {
+  for (const t of S.THEMES) assert.equal(S.checkTheme(t), t);
+  for (const t of [null, '', 'Dark', 'vana ', '{}']) assert.equal(S.checkTheme(t), 'system');
+});
+test('every setting in the defaults has a check, so none passes through unchecked', () => {
+  const junk = Object.fromEntries(Object.keys(S.DEFAULTS).map((k) => [k, { junk: true }]));
+  const r = checkS(junk);
+  assert.deepEqual(r.value, S.DEFAULTS);
+  assert.equal(r.notes.length, Object.keys(S.DEFAULTS).length);
+});
+
+// ---- NM cards ----
+const CARDS = createRequire(import.meta.url)('../nm-cards.js');
+const RATES = [1, 5, 10, 50, 100, 150, 240, 1000]; // LandSandBoat's drop tiers, data/enums/drop_rate.yaml
+const ITEM_NAMES = new Set(Object.values(JSON.parse(readFileSync(new URL('../tools/item-names.json', import.meta.url), 'utf8')).items).map((i) => i.name));
+test('every NM on the page has a card, and every card is for an NM on the page', () => {
+  assert.deepEqual(Object.keys(CARDS).sort(), V.nmList().map(S.nmKey).sort());
+});
+test("card drops use LandSandBoat's rate tiers and names checked against BG Wiki", () => {
+  for (const [key, c] of Object.entries(CARDS)) for (const [name, rate] of c.drops) {
+    assert.ok(RATES.includes(rate), `${key} ${name} ${rate}`);
+    assert.ok(ITEM_NAMES.has(name) && !name.includes('_'), `${key} ${name}`);
+  }
+});
+test('every map grid on a card cites a BG Wiki page and revision', () => {
+  for (const [key, c] of Object.entries(CARDS)) if (c.map) assert.ok(c.map.grid.length && c.map.page && Number.isInteger(c.map.revid) && ['spawn', 'qm'].includes(c.map.at), key);
+});
+test('both NM files name the LandSandBoat commit they cite and copy none of its lines', () => {
+  for (const file of ['nm-data.js', 'nm-cards.js']) {
+    const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    assert.match(text, /^\/\/ LandSandBoat commit: [0-9a-f]{40}$/m, file);
+    assert.ok(!text.includes('"text":'), file);
+  }
+});
+test('every card cites the LandSandBoat lines it comes from, and has a level', () => {
+  for (const [key, c] of Object.entries(CARDS)) {
+    assert.ok(c.sources.length > 0 && c.sources.every((s) => citation(s) && s.file.startsWith('data/zones/')), key);
+    assert.ok(Array.isArray(c.level) && c.level[0] <= c.level[1], key);
+  }
+});
+test("King Vinegarroon's card: level 80, (G-11), Ace's Helm 15% and two 10% drops", () => {
+  const c = CARDS['King Vinegarroon|125'];
+  assert.deepEqual([c.level, c.map.grid, c.drops], [[80, 80], ['(G-11)'], [["Ace's Helm", 150], ['Venomous Claw', 100], ['Heavy Shell', 100]]]);
+});
+test('lottery NMs name their placeholders, and never themselves', () => {
+  assert.deepEqual(CARDS['Citipati|7'].placeholders, ['Corse']);
+  assert.deepEqual(CARDS['Black Triple Stars|110'].placeholders, ['Midnight Wings']);
+  for (const nm of V.nmList()) assert.ok(!CARDS[S.nmKey(nm)].placeholders.includes(nm.name), nm.name);
+  for (const nm of V.nmList().filter((n) => n.lottery)) assert.ok(CARDS[S.nmKey(nm)].placeholders.length > 0, nm.name);
+});
+test('a drop rolled more than once keeps one entry per roll (Manes: four rolls of Taffeta Cloth)', () => {
+  assert.deepEqual(CARDS['Manes|167'].drops.map((d) => d[1]), [1000, 240, 150, 150]);
+});
+test('quest NMs place the ??? that pops them; grids BG Wiki hedges are left out', () => {
+  for (const key of ['Marchelute|103', 'Baumesel|24', 'Doman|103', 'Onryo|103']) assert.equal(CARDS[key].map.at, 'qm', key);
+  assert.equal(CARDS['Bendigeit Vran|108'].map, null);
+  assert.equal(CARDS['Vodyanoi|1'].map, null);
+});
+
+// ---- Servers ----
+test('retail has no guild holidays; HorizonXI and other LandSandBoat servers can have them', () => {
+  assert.deepEqual(Object.keys(V.SERVERS), ['retail', 'horizon', 'lsb']);
+  assert.deepEqual(Object.values(V.SERVERS).map((x) => x.holidays), [false, true, true]);
+});
+test('on HorizonXI a Dynamis timer waits for the conquest tally; on retail and other LandSandBoat servers, for JP midnight', () => {
+  const dyna = V.TIMER_KINDS.find((k) => k.id === 'dynamis'), start = Date.UTC(2026, 9, 21, 12); // a Wednesday
+  assert.equal(V.timerRule(dyna, 'retail').rule, 'jp');
+  assert.equal(V.timerRule(dyna, 'lsb').rule, 'jp');
+  assert.equal(V.timerRule(dyna, 'horizon').rule, 'tally');
+  assert.equal(V.timerReady(V.timerRule(dyna, 'horizon').rule, start), Date.UTC(2026, 9, 25, 15));
+  assert.equal(V.timerReady(V.timerRule(dyna, 'retail').rule, start), Date.UTC(2026, 9, 21, 15));
+  assert.equal(V.timerRule(dyna, 'nowhere').rule, 'jp');
+});
+test('HorizonXI offers no Fields or Grounds of Valor, Hunt Registry or ACP, AMK and ASA key timers, and no Hachirin-no-Obi', () => {
+  assert.deepEqual([...V.SERVERS.horizon.hidden].sort(), ['hunt', 'keys', 'regime']);
+  for (const id of V.SERVERS.horizon.hidden) assert.ok(V.TIMER_KINDS.some((k) => k.id === id), id);
+  assert.deepEqual([V.SERVERS.retail.hidden, V.SERVERS.lsb.hidden], [[], []]);
+  assert.deepEqual(Object.values(V.SERVERS).map((x) => x.hachirin), [true, false, true]);
+});
+test('the server choice is saved, checked, shared between tabs, and Retail by default', () => {
+  assert.equal(S.DEFAULTS.server, 'retail');
+  assert.ok(S.SHARED.includes('server'));
+  assert.equal(checkS({ server: 'horizon' }).value.server, 'horizon');
+  for (const bad of ['Retail', 'horizonxi', 3, null]) assert.equal(checkS({ server: bad }).value.server, 'retail');
+});
+
+// ---- Several tabs ----
+// A save that finds another tab saved first merges: base is this tab's settings before its change.
+const BASE = checkS(FIXTURE.settings).value;
+const edit = (over) => ({ ...clone(BASE), ...over });
+function clone(v) { return JSON.parse(JSON.stringify(v)); }
+test('changes to different settings in two tabs both survive', () => {
+  const merged = S.mergeSettings(BASE, edit({ sound: true }), edit({ hour12: true }));
+  assert.deepEqual([merged.sound, merged.hour12], [true, true]);
+});
+test('the same setting changed in two tabs ends with the later save', () => {
+  assert.equal(S.mergeSettings(BASE, edit({ lead: 10 }), edit({ lead: 1 })).lead, 10);
+});
+test('a setting this tab did not change keeps what the other tab saved, view settings included', () => {
+  const merged = S.mergeSettings(BASE, edit({ sound: true }), edit({ wxZone: 103, calTab: 'rse' }));
+  assert.deepEqual([merged.wxZone, merged.calTab], [103, 'rse']);
+});
+test('timers made in two tabs at once are both kept, and a removal in either tab applies', () => {
+  const a = timer({ id: 'new-a' }), b = timer({ id: 'new-b', kind: 'dynamis', label: '' }), [first, ...rest] = BASE.timers;
+  assert.deepEqual(S.mergeSettings(BASE, edit({ timers: [...BASE.timers, a] }), edit({ timers: [...BASE.timers, b] })).timers.map((x) => x.id), [...BASE.timers.map((x) => x.id), 'new-b', 'new-a']);
+  assert.deepEqual(S.mergeSettings(BASE, edit({ timers: rest }), edit({ timers: [...BASE.timers, b] })).timers.map((x) => x.id), [...rest.map((x) => x.id), 'new-b']);
+  assert.deepEqual(S.mergeSettings(BASE, edit({ timers: [...BASE.timers, a] }), edit({ timers: rest })).timers.map((x) => x.id), [...rest.map((x) => x.id), 'new-a']);
+  // Editing a timer's start in one tab while the other adds one keeps both.
+  const moved = { ...first, start: first.start - 3600000 };
+  const m = S.mergeSettings(BASE, edit({ timers: [moved, ...rest] }), edit({ timers: [...BASE.timers, b] }));
+  assert.deepEqual(m.timers, [moved, ...rest, b]);
+});
+test('kill times, stars and saved searches merge entry by entry', () => {
+  const kills = S.mergeSettings(BASE, edit({ nmKills: { ...BASE.nmKills, 'Haty|108': T0 } }), edit({ nmKills: { 'Leshonki|153': BASE.nmKills['Leshonki|153'], 'Kreutzet|113': T0 } }));
+  assert.deepEqual(kills.nmKills, { 'Leshonki|153': BASE.nmKills['Leshonki|153'], 'Kreutzet|113': T0, 'Haty|108': T0 });
+  const stars = S.mergeSettings(BASE, edit({ starred: ['jeuno-windurst', 'bastok-jeuno'], starredZones: [126] }), edit({ starred: [...BASE.starred, 'kazham-jeuno'], starredZones: [...BASE.starredZones, 112] }));
+  assert.deepEqual([stars.starred, stars.starredZones], [['jeuno-windurst', 'kazham-jeuno', 'bastok-jeuno'], [126, 112]]);
+  const plan = { ...S.EMPTY_QUERY, weekdays: [7] };
+  assert.deepEqual(S.mergeSettings(BASE, edit({ savedPlans: [...BASE.savedPlans, plan] }), edit({ savedPlans: [BASE.savedPlans[1]] })).savedPlans, [BASE.savedPlans[1], plan]);
+});
+test('alarms merge by alarm: an alarm turned off in one tab and one added in the other both stick', () => {
+  const settings = checkS(FIXTURE.settings).value, base = checkA(FIXTURE.alarms, settings).value;
+  const off = clone(base); off[0].on = false;
+  const added = [...clone(base), { kind: 'route', ref: 'bastok-jeuno', lead: 3, on: true, discord: true }];
+  const m = S.mergeAlarms(base, off, added);
+  assert.equal(m.length, base.length + 1);
+  assert.equal(m[0].on, false);
+  // An alarm removed in this tab stays removed even though the other tab still had it.
+  assert.equal(S.mergeAlarms(base, base.slice(1), added).some((a) => a.ref === base[0].ref && a.kind === base[0].kind), false);
+  // An alarm the other tab removed stays removed.
+  assert.equal(S.mergeAlarms(base, base, base.slice(1)).length, base.length - 1);
+});
+test('every shared setting is one the settings have, and the view stays per tab', () => {
+  for (const k of S.SHARED) assert.ok(k in S.DEFAULTS, k);
+  for (const k of ['view', 'wxZone', 'routeTab', 'planner', 'calTab', 'fishId', 'magicZone', 'timerKind']) assert.ok(!S.SHARED.includes(k), k);
+});
+
 // ---- User-facing copy agrees with the data ----
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const count = (group) => V.ROUTES.filter((r) => r.group === group).length;
@@ -661,6 +991,40 @@ test('the About dialog example departure is what the data gives', () => {
   const [first] = V.departureMinutes(ROUTE['jeuno-sandoria']);
   assert.equal(`${String(Math.floor(first / 60)).padStart(2, '0')}:${String(first % 60).padStart(2, '0')}`, '01:14');
   assert.match(html, /shows 01:14 rather than 01:10/);
+});
+test('the About dialog says the one thing that can leave the browser', () => {
+  assert.match(html, /Nothing is fetched and nothing is sent anywhere, except alarm posts to a Discord webhook if you set one\./);
+  assert.doesNotMatch(html, /nothing leaves the browser/);
+});
+
+// ---- Release ----
+// The newest version heading in the changelog is the version everywhere else.
+const repoFile = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+const VERSION = /^## v(\d+\.\d+(?:\.\d+)?) /m.exec(repoFile('CHANGELOG.md'))[1];
+test(`the page, the About dialog and the README all say v${VERSION}, the newest version in the changelog`, () => {
+  assert.ok(html.includes(`<title>FFXI Timer v${VERSION} - `));
+  assert.ok(html.includes(`<span class="tagline">v${VERSION} · `));
+  assert.ok(html.includes(`<h2 id="about-title">ffxi-timer v${VERSION}</h2>`));
+  assert.match(repoFile('README.md'), new RegExp(`^# ffxi-timer v${VERSION.replace(/\./g, '\\.')}\\r?\\n`));
+});
+test('every script and the stylesheet exist and carry the version in their address, so a new release is fetched fresh', () => {
+  const assets = [...html.matchAll(/<(?:script src|link rel="stylesheet" href)="([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(assets.length, 8);
+  for (const a of assets) {
+    assert.ok(a.endsWith(`?v=${VERSION}`), a);
+    assert.ok(existsSync(new URL(`../${a.split('?')[0]}`, import.meta.url)), a);
+  }
+});
+test('every link to a part of the page has somewhere to go', () => {
+  const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  const targets = [...html.matchAll(/href="#([^"]+)"/g), ...html.matchAll(/data-simple="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(targets.length >= 15);
+  for (const id of targets) assert.ok(ids.has(id), id);
+});
+test("the README's links to files in the repo point at files that exist", () => {
+  const local = [...repoFile('README.md').matchAll(/\]\(([^)#]+)\)/g)].map((m) => m[1]).filter((p) => !/^https?:/.test(p));
+  assert.ok(local.length >= 3);
+  for (const p of local) assert.ok(existsSync(new URL(`../${p}`, import.meta.url)), p);
 });
 
 console.log(`${passed} passed, ${failed} failed`);

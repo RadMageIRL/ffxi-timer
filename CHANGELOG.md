@@ -2,6 +2,65 @@
 
 Every version of ffxi-timer and what changed in it, newest first. Dates are the day I released each one.
 
+## v1.0 (2026-10-23)
+
+Added
+- Section links under the header. Ships, trips, guilds, weather, weather finder, magic, calendars, converter, planner, fishing, NMs, timers and alarms each jump to their panel. In the Simple view, ships and guilds go to its own departures and guilds; the others open the full view first.
+- Open tabs share their settings. Starred routes and zones, NM kill times, timers, saved searches, alarms, 12/24h, sound, guild holidays, the alarm warning, the walk between docks and the Discord webhook change in every open tab as soon as one changes them, without a reload. What each tab is looking at (the zone, the tab picked, the planner search being built) stays its own.
+- A server pill next to Full and Simple: Retail, HorizonXI or LSB (another LandSandBoat server). It is Retail unless you pick another, it is remembered, and every open tab follows it. It changes what is confirmed to differ between them:
+  - Retail has no guild holidays, so the Guild holidays switch only shows for the other two, where it stays off until you turn it on.
+  - On HorizonXI the Dynamis timer waits for the conquest tally, since HorizonXI allows two entries a week, and the Fields and Grounds of Valor, Hunt Registry and ACP, AMK and ASA key timers aren't offered.
+  - Hachirin-no-Obi isn't named in the Elemental magic panel on HorizonXI.
+  - With Retail or HorizonXI picked, the NM and Fishing panels say their conditions, levels, drops and fishing rules are LandSandBoat's, and that the server differs.
+- A card for each NM. Point at, tap or focus an NM's name to see its level, the monster it rolls off if it has one, where BG Wiki places it on the map with a link to the page version checked, what it needs, how it pops, and its drops at LandSandBoat's base rates. Grids BG Wiki hedges are left out, and a quest NM's card places the ??? that pops it.
+- `nm-cards.js`, built by `tools/build-nm-cards.mjs` from LandSandBoat's mob data and the BG Wiki citations in `tools/nm-maps.json` and `tools/item-names.json`. `tools/check-nms.mjs` checks the cards' LandSandBoat lines too.
+- With several tabs open, one of them delivers each alarm, so it shows, chimes, notifies and posts to Discord once. The tab you last clicked or typed in delivers them, the others say so in their alarm panel, and when that tab closes another open tab takes over.
+- A browser smoke test, `tests/smoke.mjs`, and a GitHub Actions workflow that runs it and the unit tests on every push and pull request.
+- `COPYING`, the GNU GPL version 3. The four data files that come from LandSandBoat (`weather-data.js`, `fishing-data.js`, `nm-cards.js` and `nm-data.js`) now say at the top that they are derived from LandSandBoat and licensed under GPL-3.0, and when I modified them.
+- `third_party/landsandboat/`: the 255 LandSandBoat files the data files are built from, at commit `ed34371`, with LandSandBoat's license and a `COMMIT` file naming the commit. The build tools rebuild the shipped files from them byte for byte, and `tools/build-nm-cards.mjs` reads the commit from `COMMIT` when the folder isn't a git checkout.
+
+Changed
+- The weather forecast shows 8 days unless you pick more. It was 16.
+- Guilds and shops are open every day unless **Guild holidays** is on. Retail dropped guild holidays in the June 2014 version update, and LandSandBoat servers close guilds on their holidays only when the server turns that on. With it on, each one closes all day on its holiday as before, and the Holiday column shows.
+- Discord posts no longer ping anyone. An @everyone, @here, role or user mention in a timer note posts as plain text.
+- A custom timer takes from 0.1 to 8,760 hours (a year).
+- The weather panel says the forecast uses a 2,160-day weather table for each zone.
+- The About dialog and the README say the times come from your device's clock.
+- All text in the light and Vana'diel themes now has at least WCAG AA contrast (4.5:1), as the dark theme had.
+  - Light theme: the element, gold, green, red, gray and accent colors are a shade darker.
+  - Vana'diel theme: the gray text and the fire, water, dark and red colors are a shade lighter, and the highlight on rows that are happening now is fainter.
+  - Vana'diel theme: each window's bright top band ends within 160px, so a tall panel's rows sit on the darker blue. A picked element chip sits in the same dark well as the text boxes.
+- Bells, stars, weather chips, zone names, the section links, the RSE details link and a saved search's × are at least 24px tall and wide.
+- On phones the toolbar fits on two rows from 375px wide (three at 320px), so the header is about 50px shorter (30px at 320px).
+- The keyboard focus ring is 2px wide. In the Full and Simple pill and the server pill it is drawn inside the button, where it used to be cut off. A control focused at the edge of a table that scrolls sideways is scrolled fully into view.
+- Weathers not picked in the weather finder show without their tint instead of faded, so their names stay readable.
+- Tab from an NM's name with its card open goes into the card, to its BG Wiki link and weather chips. Tab past the card's last control goes on along the row, and Shift+Tab goes back to the name.
+- A tab back from being frozen, from the back-forward cache or from the background reads the shared settings, alarms and theme again, so it shows other tabs' changes before anything is edited in it. It only reads, and an idle tab still reads nothing.
+- The NM panel says its lottery chances, timers, levels and drop rates are LandSandBoat's. The Fishing panel says its fish, spots, bait strengths, rarity and harder zones come from LandSandBoat's fishing tables, and a bait's tooltip calls its strength LandSandBoat's.
+- `nm-data.js` and `nm-cards.js` no longer quote LandSandBoat's lines. Each citation gives the file, the line and a fingerprint of the line at a pinned LandSandBoat commit, and `tools/check-nms.mjs` compares the fingerprints with a checkout (`tools/lsb-lines.mjs`).
+- The fishing moon is worked out from a table of my own, with the same result for every percent and direction. `tools/build-fishing.mjs` describes the columns it reads in its own words, and builds the same `fishing-data.js`.
+- Every script and the stylesheet carry the version in their address (`?v=1.0`), so after a release a browser fetches the new files instead of pairing the new page with scripts it had cached.
+- The About dialog lists every Copy link, the section links, the 12 or 24 hour clock, the themes and how several tabs share alarms, and says the planner takes weather too.
+- The README says which browsers the page needs and where v1.0 was tested, and which LandSandBoat commit the data comes from.
+- A `.gitattributes` keeps every text file's line endings LF.
+- The README's License section says which files are mine under MIT and which are derived from LandSandBoat under GPL-3.0, and that the site as a whole is offered under GPL-3.0. Each MIT file can still be used under MIT on its own.
+- The README screenshot shows v1.0.
+
+Fixed
+- Two open tabs no longer overwrite each other's changes. Before, a change in one tab could undo a timer or setting saved in the other.
+- One alarm open in two tabs no longer fires twice, and an alarm turned off or removed in one tab no longer fires from another.
+- Saved settings, timers and alarms are checked when the page loads. A damaged or unexpected value is repaired or put back to its default on its own, and a list keeps every entry it can use, so one bad timer or alarm no longer costs the rest. Before, ten kinds of damaged data left the page blank on every load. When something is repaired, a note says what, the repaired copy is saved, and the data as it was stays in the browser's storage under the same name with `_backup` after it.
+- A panel that fails no longer stops the clock, the alarms or the other panels.
+- A kill time or timer start outside 2000 to 2200 is marked invalid instead of saved.
+- After picking a fish or a zone, clicking the box again or pressing Down showed only that name. It now empties the box and shows the whole list, as the first click does.
+- A custom timer of billions of hours made the Timers and Alarms panels stop updating, even after a reload.
+- The About dialog said nothing leaves the browser. It now says alarm posts go to a Discord webhook if you set one, as the README did.
+- In a 320px window with a scrollbar, the page scrolled sideways by 10px.
+- Escape inside an NM card closed it and opened it again at once.
+- The converter's Earth date and time box showed no focus ring.
+- A Vana'diel year far out of range in the converter, such as 99,999,999, made it fail every second until it was changed. Both sides of the converter now take moments from 2000 to 2200 and mark anything else invalid, as the page's other date boxes do.
+- Jugner Forest [S] showed Vunkerl Inlet [S]'s weather. In retail it has the same weather as La Vaule [S], and it now shows that.
+
 ## v0.8 (2026-10-22)
 
 Added

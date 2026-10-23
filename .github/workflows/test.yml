@@ -1,0 +1,36 @@
+# Runs the tests on every push and pull request. No packages are installed: the unit tests need only
+# Node, and the smoke test drives the Chrome that GitHub's Ubuntu runners come with.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Every script parses
+        run: for f in *.js tools/*.mjs tests/*.mjs; do node --check "$f" || exit 1; done
+      - name: Unit tests
+        run: node tests/run.mjs
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Browser smoke test in Chrome
+        run: node tests/smoke.mjs
