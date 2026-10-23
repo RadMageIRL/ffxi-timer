@@ -2,7 +2,7 @@
 
 A Vana'diel clock and schedule board for Final Fantasy XI: the time, the moon, every airship and ferry, guild and shop hours, RSE, weather and where to find it, a planner for lining conditions up, and alarms. It follows in the footsteps of Pyogenes' [FFXI Time Information](https://www.pyogenes.com/ffxi/timer/v2.html) page, rebuilt with current schedule data.
 
-**Use it: [radmageirl.github.io/ffxi-timer](https://radmageirl.github.io/ffxi-timer/)**
+**Use it: [radmagelabs.com/ffxi](https://radmagelabs.com/ffxi/)** (also at [radmageirl.github.io/ffxi-timer](https://radmageirl.github.io/ffxi-timer/))
 
 ![ffxi-timer in the Vana'diel theme: the clock on Earthsday 10:50 with a 74% waning moon, and the airship board with Jeuno to Kazham and Windurst to Jeuno boarding](screenshots/ffxi-timer-vana.png)
 
