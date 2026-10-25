@@ -691,10 +691,10 @@ function assertStable(result, alarms) {
   assert.deepEqual(again.value, result.value);
 }
 
-test('saved settings from v0.8 come back unchanged, with guild holidays off and Retail picked', () => {
+test('saved settings from v0.8 come back unchanged, with guild holidays off, Retail picked and the news bar closed', () => {
   const r = checkS(FIXTURE.settings);
   assert.deepEqual(r.notes, []);
-  assert.deepEqual(r.value, { ...FIXTURE.settings, guildHolidays: false, server: 'retail' });
+  assert.deepEqual(r.value, { ...FIXTURE.settings, guildHolidays: false, server: 'retail', newsOpen: false });
   assert.equal(Object.keys(FIXTURE.settings).length, 30);
 });
 test('saved alarms from v0.8, one of every kind, come back unchanged', () => {
@@ -973,7 +973,7 @@ test('alarms merge by alarm: an alarm turned off in one tab and one added in the
 });
 test('every shared setting is one the settings have, and the view stays per tab', () => {
   for (const k of S.SHARED) assert.ok(k in S.DEFAULTS, k);
-  for (const k of ['view', 'wxZone', 'routeTab', 'planner', 'calTab', 'fishId', 'magicZone', 'timerKind']) assert.ok(!S.SHARED.includes(k), k);
+  for (const k of ['view', 'wxZone', 'routeTab', 'planner', 'calTab', 'fishId', 'magicZone', 'timerKind', 'newsOpen']) assert.ok(!S.SHARED.includes(k), k);
 });
 
 // ---- User-facing copy agrees with the data ----
@@ -992,14 +992,88 @@ test('the About dialog example departure is what the data gives', () => {
   assert.equal(`${String(Math.floor(first / 60)).padStart(2, '0')}:${String(first % 60).padStart(2, '0')}`, '01:14');
   assert.match(html, /shows 01:14 rather than 01:10/);
 });
-test('the About dialog says the one thing that can leave the browser', () => {
-  assert.match(html, /Nothing is fetched and nothing is sent anywhere, except alarm posts to a Discord webhook if you set one\./);
-  assert.doesNotMatch(html, /nothing leaves the browser/);
+test('the About dialog says the one thing that can leave the browser and the one thing that is fetched', () => {
+  assert.match(html, /Nothing is sent anywhere except alarm posts to a Discord webhook if you set one\. The only thing fetched is the news bar's headlines, from this same site, and only while the bar is open\./);
+  assert.doesNotMatch(html, /nothing leaves the browser|Nothing is fetched/);
+});
+
+const repoFile = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+// ---- Latest news ----
+// news.js reads the official site's RSS feeds for tools/fetch-news.mjs and checks news.json for the page.
+const N =createRequire(import.meta.url)('../news.js');
+const FEED = `<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel rdf:about="https://www.playonline.com/pcd2/topics/ff11us/topics.xml"><title>FINAL FANTASY XI Official Web Site: Topics</title>
+  <link>https://www.playonline.com/ff11us/index.html</link>
+  <items><rdf:Seq><rdf:li resource="https://www.playonline.com/pcd2/topics/ff11us/detail/1/detail.html" /></rdf:Seq></items></channel>
+<item rdf:about="https://www.playonline.com/pcd2/topics/ff11us/detail/1/detail.html">
+  <title>Shami&apos;s Trove Returns &amp; the Alter Ego Expo</title>
+  <link>https://www.playonline.com/pcd2/topics/ff11us/detail/1/detail.html</link>
+  <description><![CDATA[<strong>Read on</strong> <script>x()</script>]]></description>
+  <dc:date>Fri, 23 Oct 2026 17:00:00 JST</dc:date>
+</item>
+<item><title>Forum &#8212; Maintenance <b>(Oct. 21)</b></title><link>http://www.playonline.com/ff11us/polnews/news1.shtml#top</link><dc:date>Thu, 22 Oct 2026 18:12:33 JST</dc:date></item>
+<item><title>The October Version Update</title><link>https://sqex.to/BXGTh</link><dc:date>Sat, 24 Oct 2026 09:00:00 JST</dc:date></item>
+<item><title>Somewhere else</title><link>https://example.com/news</link><dc:date>Sun, 25 Oct 2026 09:00:00 JST</dc:date></item>
+<item><title>A script</title><link>javascript:alert(1)</link></item>
+<item><title>   </title><link>https://www.playonline.com/untitled.html</link></item>
+<item><title>The same link again</title><link>https://sqex.to/BXGTh</link></item>
+<item><title>No date</title><link>https://www.playonline.com/nodate.html</link></item>
+</rdf:RDF>`;
+test('a feed gives its items newest first, as text, with only https links to Square Enix sites', () => {
+  assert.deepEqual(N.parseFeed(FEED), [
+    { title: 'The October Version Update', link: 'https://sqex.to/BXGTh', date: '2026-10-24T00:00:00.000Z' },
+    { title: "Shami's Trove Returns & the Alter Ego Expo", link: 'https://www.playonline.com/pcd2/topics/ff11us/detail/1/detail.html', date: '2026-10-23T08:00:00.000Z' },
+    { title: 'Forum - Maintenance (Oct. 21)', link: 'https://www.playonline.com/ff11us/polnews/news1.shtml', date: '2026-10-22T09:12:33.000Z' },
+    { title: 'No date', link: 'https://www.playonline.com/nodate.html', date: null },
+  ]);
+  assert.equal(N.parseFeed(FEED, 2).length, 2);
+  assert.deepEqual(N.parseFeed('<html>not a feed</html>'), []);
+});
+test("feed dates in Japan time come out as the right moment, and a date that can't be read as null", () => {
+  assert.equal(N.cleanDate('Fri, 23 Oct 2026 17:00:00 JST'), '2026-10-23T08:00:00.000Z');
+  assert.equal(N.cleanDate('2026-10-23T08:00:00Z'), '2026-10-23T08:00:00.000Z');
+  assert.equal(N.cleanDate('soon'), null);
+});
+test('a link is kept only as https to the official site, its link shortener or the forum', () => {
+  assert.equal(N.cleanLink('http://www.playonline.com/ff11us/polnews/news27806.shtml'), 'https://www.playonline.com/ff11us/polnews/news27806.shtml');
+  assert.equal(N.cleanLink('https://forum.square-enix.com/ffxi/threads/64777?p=1#post1'), 'https://forum.square-enix.com/ffxi/threads/64777?p=1');
+  for (const bad of ['https://playonline.com.example.com/x', 'https://evil.example/playonline.com', 'ftp://www.playonline.com/x', 'https://user@www.playonline.com/x', 'https://www.playonline.com:8443/x', 'javascript:alert(1)', '']) {
+    assert.equal(N.cleanLink(bad), null, bad);
+  }
+});
+test('news.json as the page reads it keeps only entries that look like what the fetcher writes', () => {
+  const good = { title: 'Harvest Festival', link: 'https://www.playonline.com/pcd2/topics/ff11us/detail/40455/detail.html', date: '2026-10-09T08:01:00.000Z' };
+  const r = N.sanitize({ topics: [good, { title: 'x', link: 'https://example.com/' }, { title: 5, link: good.link }, null, { ...good, title: '<b>Bold</b>' }] });
+  assert.deepEqual(r, { topics: [good, { ...good, title: 'Bold' }], information: [] });
+  assert.equal(N.sanitize({ topics: Array(20).fill(good) }).topics.length, N.PER_FEED);
+  for (const bad of [null, [], 'news', { topics: [] }, { topics: [{ title: 'x', link: 'javascript:alert(1)' }] }]) assert.equal(N.sanitize(bad), null, JSON.stringify(bad));
+});
+test("the saved news.json is the fetcher's own output, with headlines from both feeds", () => {
+  const saved = JSON.parse(repoFile('news.json'));
+  assert.deepEqual(Object.keys(saved), N.FEEDS.map((f) => f.key));
+  assert.deepEqual(N.sanitize(saved), saved);
+  for (const f of N.FEEDS) assert.ok(saved[f.key].length > 0 && saved[f.key].length <= N.PER_FEED, f.key);
+  assert.equal(repoFile('news.json'), `${JSON.stringify(saved, null, 2)}\n`);
+});
+test('the News workflow fetches every hour and commits only news.json, only when it changed', () => {
+  const yml = repoFile('.github/workflows/news.yml');
+  assert.match(yml, /- cron: '\d{1,2} \* \* \* \*'/);
+  assert.match(yml, /run: node tools\/fetch-news\.mjs/);
+  assert.match(yml, /if git diff --quiet -- news\.json; then .*exit 0; fi/);
+  assert.match(yml, /git add news\.json\n/);
+  assert.doesNotMatch(yml, /git add (-A|\.|--all)/);
+  assert.match(yml, /permissions:\n  contents: write\n/);
+});
+test('the news bar starts closed and its setting is per tab', () => {
+  assert.equal(S.DEFAULTS.newsOpen, false);
+  assert.match(html, /<details class="card news" id="news">/);
+  assert.doesNotMatch(html, /<details class="card news" id="news" open/);
 });
 
 // ---- Release ----
 // The newest version heading in the changelog is the version everywhere else.
-const repoFile = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const VERSION = /^## v(\d+\.\d+(?:\.\d+)?) /m.exec(repoFile('CHANGELOG.md'))[1];
 test(`the page, the About dialog and the README all say v${VERSION}, the newest version in the changelog`, () => {
   assert.ok(html.includes(`<title>FFXI Timer v${VERSION} - `));
@@ -1009,7 +1083,7 @@ test(`the page, the About dialog and the README all say v${VERSION}, the newest 
 });
 test('every script and the stylesheet exist and carry the version in their address, so a new release is fetched fresh', () => {
   const assets = [...html.matchAll(/<(?:script src|link rel="stylesheet" href)="([^"]+)"/g)].map((m) => m[1]);
-  assert.equal(assets.length, 8);
+  assert.equal(assets.length, 9);
   for (const a of assets) {
     assert.ok(a.endsWith(`?v=${VERSION}`), a);
     assert.ok(existsSync(new URL(`../${a.split('?')[0]}`, import.meta.url)), a);

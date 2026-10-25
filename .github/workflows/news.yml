@@ -1,0 +1,39 @@
+# Fetches the newest headlines from the official FINAL FANTASY XI site every hour and commits news.json
+# when they changed, which republishes the site with them. No packages are installed. The time is 17
+# minutes past the hour because GitHub delays more runs on the hour; it can still start a few minutes
+# late, which is fine for news. GitHub pauses timed workflows in a public repo after 60 days without
+# activity in it; "Enable workflow" on the Actions tab starts it again.
+name: News
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: news
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Fetch the headlines
+        run: node tools/fetch-news.mjs
+      - name: Commit news.json if the headlines changed
+        run: |
+          if git diff --quiet -- news.json; then echo "No new headlines"; exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add news.json
+          git commit -m 'Update the news headlines'
+          git pull --rebase
+          git push

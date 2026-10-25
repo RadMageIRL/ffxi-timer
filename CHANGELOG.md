@@ -2,6 +2,17 @@
 
 Every version of ffxi-timer and what changed in it, newest first. Dates are the day I released each one.
 
+## v1.0.1 (2026-10-25)
+
+Added
+- A Latest news bar at the top of the page with the newest headlines from the official FINAL FANTASY XI site: Topics (updates, events and campaigns) and Notices and maintenance, up to six from each, with its date and a link to its page there. It starts closed and loads nothing until you open it; whether it is open is remembered for that tab.
+- The official site's feeds can't be read by a page on another site, so the News workflow (`.github/workflows/news.yml`) runs `tools/fetch-news.mjs` every hour and commits `news.json` next to the page when the headlines changed. A feed that can't be read keeps its last headlines.
+- `news.js` reads the feeds and checks `news.json` again in the page: only titles, dates and links, as plain text, and only https links to the official site, its link shortener and the forum.
+- Tests for reading the feeds, for `news.json` and for the workflow, and a smoke check that the bar starts closed, asks for nothing until it is opened, and then shows the headlines.
+
+Changed
+- The About dialog and the README say the news bar's headlines are the one thing the page fetches, from its own site and only while the bar is open.
+
 ## v1.0 (2026-10-23)
 
 Added

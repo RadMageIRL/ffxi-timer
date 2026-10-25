@@ -14,7 +14,7 @@
     calTab: 'days', calCount: 10, calWeekday: -1, calPhase: 'fullnew', calRace: -1, planner: EMPTY_QUERY, lead: 3,
     wxZone: 103, wxCount: 8, discord: '', wxFind: [], wxFindDays: 16, starredZones: [], savedPlans: [],
     view: 'full', tripFrom: 'Port Bastok', tripTo: 'Kazham', tripTransfer: 1, fishId: 4401, // Moat Carp
-    nmKills: {}, magicElement: 'fire', magicZone: 103, timers: [], timerKind: 'dynamis', server: 'retail',
+    nmKills: {}, magicElement: 'fire', magicZone: 103, timers: [], timerKind: 'dynamis', server: 'retail', newsOpen: false,
   };
   const LEADS = [1, 2, 3, 5, 10];
   const DISCORD_URL = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+\/?$/;
@@ -170,6 +170,7 @@
     take('timers', listOf((x) => checkTimer(x, ctx), (x) => x.id));
     take('timerKind', inSet(ctx.timerKinds));
     take('server', oneOf(['retail', 'horizon', 'lsb']));
+    take('newsOpen', bool);
     return ok(out, notes);
   }
 

@@ -53,6 +53,16 @@ export const CHECKS = {
   ok('after a reload the theme is set before the page draws, and the server is still HorizonXI', document.documentElement.dataset.theme === 'light'
     && document.querySelector('#server-tabs [data-server="horizon"]').getAttribute('aria-pressed') === 'true');
   ok('a reload repairs nothing', !repaired());
+  // The news bar asked for nothing while closed (the request check after the first load); open, it
+  // reads news.json and shows each headline as a link to the official site.
+  const bar = $('news'), closed = !bar.open;
+  bar.open = true; await sleep(1200);
+  const links = [...bar.querySelectorAll('.news-list a')];
+  const official = links.every((a) => a.protocol === 'https:' && VanaNews.HOSTS.includes(a.hostname) && a.target === '_blank' && /noopener/.test(a.rel));
+  ok('the news bar starts closed, and opened it shows headlines from both feeds linking to the official site',
+    closed && links.length > 0 && official && bar.querySelectorAll('.news-col .news-list').length === VanaNews.FEEDS.length, links.length);
+  bar.open = false; await sleep(100);
+  ok('closing the news bar keeps it closed for this tab', JSON.parse(localStorage.getItem('ffxi_timer_settings') || '{}').newsOpen === false);
   return out;`,
   fixture: (f) => `${PRELUDE}
   const f = ${JSON.stringify(f)}, st = f.settings;

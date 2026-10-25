@@ -128,6 +128,7 @@
         time: { hour: 'numeric', minute: '2-digit', hour12: h12 },
         day: { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: h12 },
         date: { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: h12 },
+        news: { month: 'short', day: 'numeric' },
         jst: { timeZone: 'Asia/Tokyo', weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' },
       }[kind]);
     }
@@ -1837,6 +1838,65 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     window.open(`${location.pathname}?mini`, 'ffxi-timer-mini', 'popup,width=340,height=250');
   }
 
+  // ---- Latest news ----
+  // The bar starts closed and asks for nothing until it is opened. news.json sits next to the page and the
+  // News workflow refreshes it every hour; while the bar is open it is read again every 15 minutes, and a
+  // read that fails keeps the headlines already shown. Nothing here can stop the clock or the alarms.
+  const News = window.VanaNews;
+  const NEWS_REFRESH = 15 * 60000, NEWS_TIMEOUT = 8000;
+  const news = { feeds: null, status: 'idle', loading: false, checkedAt: -Infinity };
+  const siteLink = (label) => el('a', { href: News.SITE, target: '_blank', rel: 'noopener noreferrer', text: label });
+  function renderNews() {
+    const note = {
+      idle: ['Opening this loads the newest headlines.'],
+      loading: ['Loading the newest headlines.'],
+      ok: ['The newest headlines from the official site, which this site checks every hour. ', siteLink('Open the official site'), '.'],
+      stale: ['The headlines could not be updated just now; these are the last ones loaded. ', siteLink('Open the official site'), '.'],
+      failed: ['The news could not load right now. The clock and alarms are not affected. ', siteLink('Read the news on the official site'), '.'],
+      unavailable: ['Headlines load when this page is opened from a website, such as ', el('a', { href: 'https://radmagelabs.com/ffxi/', text: 'radmagelabs.com/ffxi/' }),
+        '. Here, ', siteLink('read the news on the official site'), '.'],
+    }[news.loading && !news.feeds ? 'loading' : news.status];
+    $('news-note').replaceChildren(...note);
+    $('news-cols').replaceChildren(...(news.feeds ? News.FEEDS.map((f) => el('section', { class: 'news-col', 'data-feed': f.key },
+      el('h3', { text: f.title }),
+      news.feeds[f.key].length
+        ? el('ul', { class: 'news-list' }, news.feeds[f.key].map((i) => el('li', {},
+          el('a', { href: i.link, target: '_blank', rel: 'noopener noreferrer', text: i.title }),
+          i.date ? el('time', { datetime: i.date, text: earth(Date.parse(i.date), 'news') }) : null)))
+        : el('p', { class: 'muted', text: 'No headlines.' }))) : []));
+  }
+  async function loadNews() {
+    if (news.loading) return;
+    // A page opened from disk can't read files next to it.
+    if (location.protocol === 'file:') { news.status = 'unavailable'; renderNews(); return; }
+    news.loading = true;
+    news.checkedAt = Date.now();
+    renderNews();
+    let feeds = null;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), NEWS_TIMEOUT);
+    try {
+      const res = await fetch('news.json', { cache: 'no-cache', credentials: 'omit', signal: ctl.signal });
+      if (res.ok) feeds = News.sanitize(await res.json());
+    } catch (e) { /* shown as could not load */ } finally { clearTimeout(timer); }
+    news.loading = false;
+    if (feeds) Object.assign(news, { feeds, status: 'ok' });
+    else news.status = news.feeds ? 'stale' : 'failed';
+    safely('news', renderNews);
+  }
+  function refreshNews(now) {
+    if ($('news').open && news.status !== 'unavailable' && now - news.checkedAt >= NEWS_REFRESH) loadNews();
+  }
+  // Whether the bar is open is kept for this tab; opening it the first time loads the headlines.
+  function wireNews() {
+    const bar = $('news');
+    bar.addEventListener('toggle', () => {
+      if (settings.newsOpen !== bar.open) { settings.newsOpen = bar.open; persist(); }
+      if (bar.open) refreshNews(Date.now());
+    });
+    renderNews();
+    if (settings.newsOpen) bar.open = true; // fires toggle, which loads the headlines
+  }
+
   // ---- Theme ----
   // Same scheme as Kard and Delta: no attribute means follow the system setting.
   const { THEMES } = S;
@@ -1973,6 +2033,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     if (!document.hidden) {
       safely('clock, moon and resets', () => renderHero(now));
       safely('starred zones', () => renderStarredZones(now));
+      safely('news', () => refreshNews(now));
       if (settings.view === 'simple') safely('simple view', () => renderSimple(now));
       else for (const [name, render] of PANELS) safely(name, () => render(now));
     }
@@ -2004,7 +2065,7 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     safely('view', applyView);
     safely('shared link', () => { target = applyHash(location.hash); });
     for (const [name, step] of [['controls', wire], ['toolbar', paintToolbar], ['server rules', paintServer], ['notifications', paintNotify], ['guild filter', buildGuildFilter],
-      ['calendar controls', buildCalendarControls], ['planner controls', buildPlanner]]) safely(name, step);
+      ['calendar controls', buildCalendarControls], ['planner controls', buildPlanner], ['news', wireNews]]) safely(name, step);
     safely('shared link', () => openTarget(target));
     if (repairs.length) toast('Saved data repaired', `${repairs.join('. ')}. The data as it was is kept in this browser's storage with _backup after its name.`);
     // The alarm tab: wait in line for the lock, and take it over on a click or key press here.

@@ -21,7 +21,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
-  <title>FFXI Timer v1.0 - Weather Forecasts, Moon Phases &amp; Vana'diel Clock | RadMage Labs</title>
+  <title>FFXI Timer v1.0.1 - Weather Forecasts, Moon Phases &amp; Vana'diel Clock | RadMage Labs</title>
   <meta name="description" content="Final Fantasy XI weather forecasts, moon phases and Vana'diel time, plus airship and ferry schedules, guild hours, RSE, NM and fishing planning, and alarms.">
   <link rel="canonical" href="https://radmagelabs.com/ffxi/">
   <meta property="og:type" content="website">
@@ -44,12 +44,12 @@
    "author": {"@type": "Person", "name": "RadMageIRL", "url": "https://github.com/RadMageIRL"},
    "sameAs": "https://github.com/RadMageIRL/ffxi-timer"}
   </script>
-  <link rel="stylesheet" href="style.css?v=1.0">
+  <link rel="stylesheet" href="style.css?v=1.0.1">
 </head>
 <body>
   <main class="app" id="app">
     <header class="topbar">
-      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v1.0 · vana'diel clock · <a href="https://radmagelabs.com/">RadMage Labs</a></span></div>
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v1.0.1 · vana'diel clock · <a href="https://radmagelabs.com/">RadMage Labs</a></span></div>
       <nav class="toolbar" aria-label="Controls">
         <div class="tabs view-tabs" id="view-tabs" role="group" aria-label="View">
           <button type="button" data-view="full" aria-pressed="true" title="Every panel">Full</button>
@@ -73,6 +73,18 @@
         <a href="#timer-panel">timers</a> · <a href="#alarm-panel">alarms</a>
       </nav>
     </header>
+
+    <details class="card news" id="news">
+      <summary>
+        <span class="news-title">Latest news</span>
+        <span class="news-from muted">from the official FINAL FANTASY XI site</span>
+        <span class="news-action" aria-hidden="true"></span>
+      </summary>
+      <div class="news-body">
+        <p class="news-note" id="news-note" aria-live="polite"></p>
+        <div class="news-cols" id="news-cols"></div>
+      </div>
+    </details>
 
     <section class="hero" aria-label="Vana'diel now">
       <div class="card clock-card">
@@ -477,10 +489,11 @@
 
   <dialog class="about" id="about-dialog" aria-labelledby="about-title">
     <form method="dialog" class="about-body">
-      <h2 id="about-title">ffxi-timer v1.0</h2>
-      <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from this device's clock, so keep that clock set to update automatically. Nothing is fetched and nothing is sent anywhere, except alarm posts to a Discord webhook if you set one.</p>
+      <h2 id="about-title">ffxi-timer v1.0.1</h2>
+      <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from this device's clock, so keep that clock set to update automatically. Nothing is sent anywhere except alarm posts to a Discord webhook if you set one. The only thing fetched is the news bar's headlines, from this same site, and only while the bar is open.</p>
       <h3>What it shows</h3>
       <ul>
+        <li>Latest news: the newest Topics and Notices and maintenance headlines from the official FINAL FANTASY XI site, checked every hour, in a bar at the top that starts closed</li>
         <li>Vana'diel time and date, the weekday's strong and weak elements, day or night, and the next day change</li>
         <li>Moon percent and phase, with the next phase change, full moon and new moon</li>
         <li>JP midnight, the weekly conquest tally (Monday 00:00 JST) and this week's RSE race and dungeon</li>
@@ -517,12 +530,13 @@
   <div class="nm-card" id="nm-card" role="dialog" aria-label="NM details" hidden></div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="weather-data.js?v=1.0"></script>
-  <script src="fishing-data.js?v=1.0"></script>
-  <script src="nm-data.js?v=1.0"></script>
-  <script src="nm-cards.js?v=1.0"></script>
-  <script src="vana.js?v=1.0"></script>
-  <script src="store.js?v=1.0"></script>
-  <script src="app.js?v=1.0"></script>
+  <script src="weather-data.js?v=1.0.1"></script>
+  <script src="fishing-data.js?v=1.0.1"></script>
+  <script src="nm-data.js?v=1.0.1"></script>
+  <script src="nm-cards.js?v=1.0.1"></script>
+  <script src="vana.js?v=1.0.1"></script>
+  <script src="store.js?v=1.0.1"></script>
+  <script src="news.js?v=1.0.1"></script>
+  <script src="app.js?v=1.0.1"></script>
 </body>
 </html>
