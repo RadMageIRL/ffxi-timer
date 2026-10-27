@@ -21,7 +21,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230c1018'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%232a3550' stroke-width='2'/%3E%3Ccircle cx='29' cy='33' r='17' fill='%238fd0ff'/%3E%3Ccircle cx='37' cy='27' r='14' fill='%230c1018'/%3E%3Ccircle cx='46' cy='45' r='2.5' fill='%23e6c36a'/%3E%3C/svg%3E">
-  <title>FFXI Timer v1.0.1 - Weather Forecasts, Moon Phases &amp; Vana'diel Clock | RadMage Labs</title>
+  <title>FFXI Timer v1.0.2 - Weather Forecasts, Moon Phases &amp; Vana'diel Clock | RadMage Labs</title>
   <meta name="description" content="Final Fantasy XI weather forecasts, moon phases and Vana'diel time, plus airship and ferry schedules, guild hours, RSE, NM and fishing planning, and alarms.">
   <link rel="canonical" href="https://radmagelabs.com/ffxi/">
   <meta property="og:type" content="website">
@@ -44,12 +44,12 @@
    "author": {"@type": "Person", "name": "RadMageIRL", "url": "https://github.com/RadMageIRL"},
    "sameAs": "https://github.com/RadMageIRL/ffxi-timer"}
   </script>
-  <link rel="stylesheet" href="style.css?v=1.0.1">
+  <link rel="stylesheet" href="style.css?v=1.0.2">
 </head>
 <body>
   <main class="app" id="app">
     <header class="topbar">
-      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v1.0.1 · vana'diel clock · <a href="https://radmagelabs.com/">RadMage Labs</a></span></div>
+      <div class="brand"><h1>ffxi-timer</h1><span class="tagline">v1.0.2 · vana'diel clock · <a href="https://radmagelabs.com/">RadMage Labs</a></span></div>
       <nav class="toolbar" aria-label="Controls">
         <div class="tabs view-tabs" id="view-tabs" role="group" aria-label="View">
           <button type="button" data-view="full" aria-pressed="true" title="Every panel">Full</button>
@@ -66,12 +66,19 @@
         <button class="button" id="theme-toggle" type="button" aria-label="Switch color theme">Theme</button>
         <button class="button" id="about-button" type="button">About</button>
       </nav>
-      <nav class="tagline jump" aria-label="Sections">
-        <a href="#transport-panel" data-simple="s-routes-card">ships</a> · <a href="#trip-panel">trips</a> · <a href="#guild-panel" data-simple="s-guilds-card">guilds</a> ·
-        <a href="#weather-panel">weather</a> · <a href="#finder-panel">weather finder</a> · <a href="#magic-panel">magic</a> · <a href="#calendar-panel">calendars</a> ·
-        <a href="#convert-panel">converter</a> · <a href="#planner-panel">planner</a> · <a href="#fishing-panel">fishing</a> · <a href="#nm-panel">NMs</a> ·
-        <a href="#timer-panel">timers</a> · <a href="#alarm-panel">alarms</a>
-      </nav>
+      <div class="jump-row">
+        <nav class="tagline jump" aria-label="Sections">
+          <a href="#transport-panel" data-simple="s-routes-card">ships</a> · <a href="#trip-panel">trips</a> · <a href="#guild-panel" data-simple="s-guilds-card">guilds</a> ·
+          <a href="#weather-panel">weather</a> · <a href="#finder-panel">weather finder</a> · <a href="#magic-panel">magic</a> · <a href="#calendar-panel">calendars</a> ·
+          <a href="#convert-panel">converter</a> · <a href="#planner-panel">planner</a> · <a href="#fishing-panel">fishing</a> · <a href="#nm-panel">NMs</a> ·
+          <a href="#timer-panel">timers</a> · <a href="#alarm-panel">alarms</a>
+        </nav>
+        <nav class="tagline jump" aria-label="Share and feedback">
+          <button class="link-button" type="button" data-share title="Share https://radmagelabs.com/ffxi/">share</button> ·
+          <a href="https://github.com/RadMageIRL/ffxi-timer/issues" target="_blank" rel="noopener" title="Report a problem or suggest something on GitHub">feedback</a> ·
+          <a href="https://buymeacoffee.com/radmageirl" target="_blank" rel="noopener">buy me a coffee</a>
+        </nav>
+      </div>
     </header>
 
     <details class="card news" id="news">
@@ -479,6 +486,12 @@
     </section>
 
     <footer class="footer">
+      <nav class="footer-links" aria-label="Project links">
+        <a href="https://github.com/RadMageIRL/ffxi-timer" target="_blank" rel="noopener">Source on GitHub</a> ·
+        <button class="link-button" type="button" data-share title="Share https://radmagelabs.com/ffxi/">Share</button> ·
+        <a href="https://github.com/RadMageIRL/ffxi-timer/issues" target="_blank" rel="noopener" title="Report a problem or suggest something on GitHub">Feedback</a> ·
+        <a href="https://buymeacoffee.com/radmageirl" target="_blank" rel="noopener">Buy me a coffee</a>
+      </nav>
       Schedules from <a href="https://github.com/LandSandBoat/server" rel="noopener">LandSandBoat</a>'s retail captures and guild data ·
       inspired by Pyogenes' <a href="https://www.pyogenes.com/ffxi/timer/v2.html" rel="noopener">FFXI Time Information</a> ·
       FINAL FANTASY is a registered trademark of Square Enix; this page is not affiliated with it.
@@ -489,7 +502,7 @@
 
   <dialog class="about" id="about-dialog" aria-labelledby="about-title">
     <form method="dialog" class="about-body">
-      <h2 id="about-title">ffxi-timer v1.0.1</h2>
+      <h2 id="about-title">ffxi-timer v1.0.2</h2>
       <p>A Vana'diel clock and schedule board for Final Fantasy XI. Everything is computed in the page from this device's clock, so keep that clock set to update automatically. Nothing is sent anywhere except alarm posts to a Discord webhook if you set one. The only thing fetched is the news bar's headlines, from this same site, and only while the bar is open.</p>
       <h3>What it shows</h3>
       <ul>
@@ -523,20 +536,22 @@
       <p>Departure times are when the boarding door shuts, from the retail packet captures LandSandBoat records for each run. They sit a few Vana'diel minutes after the round numbers older timers list, so the Jeuno to San d'Oria airship shows 01:14 rather than 01:10. Moon phase names follow the percent ranges BG Wiki lists, which are not symmetric: 43% waning is still Last Quarter and 38% waxing is still a Waxing Crescent. Chest key drops, guild hours, the RSE quest steps and the weather tables come from LandSandBoat's data and scripts. Times and schedules are the same on every server. Retail dropped guild holidays in June 2014, so with Retail picked guilds are open every day; on HorizonXI and other LandSandBoat servers it is a server setting, so Guild holidays turns them on. NM conditions, timers and drops, and fishing, follow LandSandBoat's rules whichever server is picked, and the panels say so where that server differs. Weather is a forecast of odds: each day names three weathers and the game moves among them. Outside cities, LandSandBoat servers also turn Clear, Sunshine and Clouds into Fog from 02:00 to 07:00.</p>
       <h3>Shortcuts</h3>
       <p><kbd>S</kbd> simple or full view · <kbd>T</kbd> theme · <kbd>M</kbd> mini clock · <kbd>?</kbd> this dialog</p>
-      <div class="about-actions"><button class="button" value="close">Close</button></div>
+      <h3>Source and feedback</h3>
+      <p>The source is on <a href="https://github.com/RadMageIRL/ffxi-timer" target="_blank" rel="noopener">GitHub</a>. To report a problem or suggest something, open an issue on its <a href="https://github.com/RadMageIRL/ffxi-timer/issues" target="_blank" rel="noopener">Issues page</a>. If you'd like to support future projects, you can <a href="https://buymeacoffee.com/radmageirl" target="_blank" rel="noopener">buy me a coffee</a>.</p>
+      <div class="about-actions"><button class="button" value="share" data-share>Share</button><button class="button" value="close">Close</button></div>
     </form>
   </dialog>
 
   <div class="nm-card" id="nm-card" role="dialog" aria-label="NM details" hidden></div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="weather-data.js?v=1.0.1"></script>
-  <script src="fishing-data.js?v=1.0.1"></script>
-  <script src="nm-data.js?v=1.0.1"></script>
-  <script src="nm-cards.js?v=1.0.1"></script>
-  <script src="vana.js?v=1.0.1"></script>
-  <script src="store.js?v=1.0.1"></script>
-  <script src="news.js?v=1.0.1"></script>
-  <script src="app.js?v=1.0.1"></script>
+  <script src="weather-data.js?v=1.0.2"></script>
+  <script src="fishing-data.js?v=1.0.2"></script>
+  <script src="nm-data.js?v=1.0.2"></script>
+  <script src="nm-cards.js?v=1.0.2"></script>
+  <script src="vana.js?v=1.0.2"></script>
+  <script src="store.js?v=1.0.2"></script>
+  <script src="news.js?v=1.0.2"></script>
+  <script src="app.js?v=1.0.2"></script>
 </body>
 </html>

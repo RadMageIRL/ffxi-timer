@@ -1,4 +1,4 @@
-# ffxi-timer v1.0.1
+# ffxi-timer v1.0.2
 
 A Vana'diel clock and schedule board for Final Fantasy XI: the time, the moon, every airship and ferry, guild and shop hours, RSE, weather and where to find it, a planner for lining conditions up, and alarms. It follows in the footsteps of Pyogenes' [FFXI Time Information](https://www.pyogenes.com/ffxi/timer/v2.html) page, rebuilt with current schedule data.
 
@@ -118,6 +118,10 @@ Fixed compared with the old timer:
 
 What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
+## Feedback
+
+To report a problem or suggest something, open an issue on [GitHub Issues](https://github.com/RadMageIRL/ffxi-timer/issues). If you'd like to support future projects, you can [buy me a coffee](https://buymeacoffee.com/radmageirl).
+
 ## Run it locally
 
 Download or clone this repository and open `index.html` in a modern browser. There is no install step.
@@ -146,7 +150,7 @@ node tests/smoke.mjs
 
 No dependencies. The tests cover the clock, moon, RSE, resets, every ship schedule, shop hours, weather, the weather finder, morning fog, trips, fishing, NM conditions, elemental magic, timers, the planner, the converter, calendar files, saved data, and the counts the About dialog states, and that the version and every file the page loads match.
 
-`tests/smoke.mjs` opens the page in headless Chrome over its DevTools protocol (`CHROME=<path>` picks the browser) with empty storage, after a reload, and with saved data from v0.8. It checks that every file loads, nothing logs an error, and the main controls work. GitHub Actions runs both on every push and pull request (`.github/workflows/test.yml`).
+`tests/smoke.mjs` opens the page in headless Chrome over its DevTools protocol (`CHROME=<path>` picks the browser) with empty storage, after a reload, and with saved data from v0.8. It checks that every file loads, nothing comes from another site, nothing logs an error, and the main controls work. GitHub Actions runs both on every push and pull request (`.github/workflows/test.yml`).
 
 `store.js` checks saved settings and alarms before the page uses them. Anything it can't use is repaired or reset on its own, and from a list only the bad entries go. The tests run it on damaged data of many kinds and on `tests/fixtures/v0.8-storage.json`, saved data from v0.8, which has to come back unchanged.
 

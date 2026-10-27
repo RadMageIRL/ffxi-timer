@@ -21,6 +21,8 @@ const PRELUDE = `const out = [], ok = (name, pass, detail = '') => out.push([nam
   const repaired = () => [...document.querySelectorAll('.toast strong')].some((x) => /repaired/i.test(x.textContent));`;
 export const CHECKS = {
   fresh: `${PRELUDE}
+  const away = performance.getEntriesByType('resource').map((r) => r.name).filter((u) => new URL(u).origin !== location.origin);
+  ok('nothing is loaded from another site', away.length === 0, away.join(' '));
   ok("the clock shows a Vana'diel time", /^\\d\\d:\\d\\d$/.test($('v-time').textContent), $('v-time').textContent);
   const counts = ['routes', 'guilds', 'wx-body', 'magic-body', 'cal-body', 'nm-body'].map((id) => rows(id));
   ok('the ships, guilds, weather, magic, calendar and NM tables are filled', counts.every((n) => n > 0) && counts[5] >= 40, counts.join(','));
@@ -38,6 +40,21 @@ export const CHECKS = {
   const card = $('nm-card'), opened = !card.hidden && /Drops in LandSandBoat data/.test(card.textContent);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(100);
   ok("an NM's card opens on a click and closes on Escape", opened && card.hidden, name.textContent);
+  // Share hands the canonical address to the share sheet; with no sheet it copies it. The About
+  // dialog's Share closes the dialog so the toast shows.
+  const canonical = 'https://radmagelabs.com/ffxi/';
+  const shared = [];
+  let copied = null;
+  Object.defineProperty(navigator, 'share', { configurable: true, value: async (d) => { shared.push(d.url); } });
+  for (const b of document.querySelectorAll('.topbar [data-share], .footer [data-share]')) { b.click(); await sleep(100); }
+  Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => { copied = t; } } });
+  $('about-dialog').showModal();
+  $('about-dialog').querySelector('[data-share]').click(); await sleep(100);
+  const toasted = [...document.querySelectorAll('.toast')].some((t) => /^Link copied/.test(t.textContent) && t.textContent.includes(canonical));
+  ok('Share passes the canonical address to the share sheet, or copies it and closes About where there is none',
+    shared.length === 2 && shared.every((u) => u === canonical) && copied === canonical && toasted && !$('about-dialog').open, [shared.join(','), copied, toasted].join(' '));
+  delete navigator.share; delete navigator.clipboard;
   const set = (id, v) => { const e = $(id); e.value = String(v); e.dispatchEvent(new Event('change', { bubbles: true })); };
   set('cv-year', 99999999); await sleep(1200);
   const refused = $('cv-year').classList.contains('invalid');

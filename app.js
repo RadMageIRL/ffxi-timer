@@ -1200,6 +1200,16 @@
     try { history.replaceState(null, '', hash); } catch (e) {}
     try { await navigator.clipboard.writeText(url); toast('Link copied', url); } catch (e) { toast('Copy this link', url); }
   }
+  // Share always passes the canonical address, wherever the page was opened. The device's share sheet
+  // when there is one; otherwise, or if it fails, the link is copied. Closing the sheet does nothing.
+  async function sharePage() {
+    const url = document.querySelector('link[rel="canonical"]').href;
+    const data = { title: document.querySelector('meta[property="og:title"]').content, url };
+    if (navigator.share && (!navigator.canShare || navigator.canShare(data))) {
+      try { await navigator.share(data); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); toast('Link copied', url); } catch (e) { toast('Copy this link', url); }
+  }
   const isEmptyQuery = (q) => describeQuery(q) === 'any time';
   function buildPlanner() {
     const q = settings.planner;
@@ -1963,6 +1973,8 @@ ${V.DAYS.map((d) => `.el-${d.element} { color: var(--${d.element}); }`).join('\n
     });
     $('theme-toggle').addEventListener('click', cycleTheme);
     $('about-button').addEventListener('click', () => $('about-dialog').showModal());
+    // The About dialog's Share also closes the dialog, so the "Link copied" toast isn't hidden behind it.
+    document.querySelectorAll('[data-share]').forEach((b) => b.addEventListener('click', sharePage));
     // The tagline's section links. The simple view has its own departures and guilds; a section it
     // hides opens the full view first. Focus moves along so the keyboard carries on from there.
     document.querySelectorAll('.tagline a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {

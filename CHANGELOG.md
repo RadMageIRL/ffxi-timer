@@ -2,6 +2,19 @@
 
 Every version of ffxi-timer and what changed in it, newest first. Dates are the day I released each one.
 
+## v1.0.2 (2026-10-26)
+
+Added
+- Three links at the right end of the section links under the header: share, feedback and buy me a coffee. On narrower screens they go on their own line below the section links.
+- A line of links in the footer: Source on GitHub, Share, Feedback and Buy me a coffee.
+- A Source and feedback section in the About dialog, and a Share button next to Close.
+- Share always passes https://radmagelabs.com/ffxi/, whichever address the page was opened at. Where the device has a share sheet it opens that; otherwise, or if the sheet fails, it copies the link. Share in the About dialog also closes the dialog.
+- Feedback opens the GitHub Issues page. The new links open in a new tab, so alarms keep running in this one.
+- A test that the header, footer and About dialog have these links, and smoke checks that Share passes https://radmagelabs.com/ffxi/ with and without a share sheet and that the page loads nothing from another site.
+
+Changed
+- The README has a Feedback section.
+
 ## v1.0.1 (2026-10-25)
 
 Added

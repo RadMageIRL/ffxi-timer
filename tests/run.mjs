@@ -996,6 +996,16 @@ test('the About dialog says the one thing that can leave the browser and the one
   assert.match(html, /Nothing is sent anywhere except alarm posts to a Discord webhook if you set one\. The only thing fetched is the news bar's headlines, from this same site, and only while the bar is open\./);
   assert.doesNotMatch(html, /nothing leaves the browser|Nothing is fetched/);
 });
+test('the header, footer and About have Share and link to the Issues page and Buy Me a Coffee in a new tab, and the footer and About to the source', () => {
+  const links = (href) => html.split(`<a href="${href}" target="_blank" rel="noopener"`).length - 1;
+  assert.equal(links('https://github.com/RadMageIRL/ffxi-timer'), 2);
+  assert.equal(links('https://github.com/RadMageIRL/ffxi-timer/issues'), 3);
+  assert.equal(links('https://buymeacoffee.com/radmageirl'), 3);
+  assert.equal(html.split(' data-share').length - 1, 3);
+  // Share passes the canonical address, and the tagline keeps its RadMage Labs link.
+  assert.ok(html.includes('<link rel="canonical" href="https://radmagelabs.com/ffxi/">'));
+  assert.match(html, /<span class="tagline">v[\d.]+ · vana'diel clock · <a href="https:\/\/radmagelabs\.com\/">RadMage Labs<\/a><\/span>/);
+});
 
 const repoFile = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
