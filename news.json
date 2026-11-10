@@ -1,6 +1,11 @@
 {
   "topics": [
     {
+      "title": "The November Version Update Has Landed!",
+      "link": "https://sqex.to/f5Apb",
+      "date": "2026-11-10T05:00:00.000Z"
+    },
+    {
       "title": "Announcing the 24.5th Vana'versary Nomad Mog Bonanza!",
       "link": "https://sqex.to/w97dY",
       "date": "2026-11-06T08:01:00.000Z"
@@ -24,38 +29,33 @@
       "title": "Announcing the Next Version Update",
       "link": "https://www.playonline.com/pcd2/topics/ff11us/detail/40466/detail.html",
       "date": "2026-10-27T08:00:00.000Z"
-    },
-    {
-      "title": "Shami's Trove Returns & the Alter Ego Expo Will Be Upgraded to an HQ Version!",
-      "link": "https://www.playonline.com/pcd2/topics/ff11us/detail/40463/detail.html",
-      "date": "2026-10-23T08:00:00.000Z"
     }
   ],
   "information": [
+    {
+      "title": "FINAL FANTASY XI Updated (Nov. 9)",
+      "link": "https://www.playonline.com/ff11us/polnews/news27819.shtml",
+      "date": "2026-11-10T05:44:26.000Z"
+    },
     {
       "title": "PlayOnline Viewer Updated (Nov. 8)",
       "link": "https://www.playonline.com/ff11us/polnews/news27816.shtml",
       "date": "2026-11-09T05:31:43.000Z"
     },
     {
+      "title": "All Worlds Maintenance (Nov. 9): Extended",
+      "link": "https://www.playonline.com/ff11us/polnews/news27822.shtml",
+      "date": "2026-11-08T05:00:35.000Z"
+    },
+    {
       "title": "All Worlds Maintenance (Nov. 9)",
       "link": "https://www.playonline.com/ff11us/polnews/news27813.shtml",
-      "date": "2026-11-08T05:00:03.000Z"
+      "date": "2026-11-08T05:00:35.000Z"
     },
     {
       "title": "Forum Emergency Maintenance (Oct. 21): Follow-up",
       "link": "https://www.playonline.com/ff11us/polnews/news27806.shtml",
       "date": "2026-10-22T09:12:33.000Z"
-    },
-    {
-      "title": "Forum Emergency Maintenance (Oct. 21)",
-      "link": "https://www.playonline.com/ff11us/polnews/news27803.shtml",
-      "date": "2026-10-22T09:12:33.000Z"
-    },
-    {
-      "title": "Official Website Emergency Maintenance (Oct. 21): Completed",
-      "link": "https://www.playonline.com/ff11us/polnews/news27801.shtml",
-      "date": "2026-10-22T08:45:02.000Z"
     }
   ]
 }
